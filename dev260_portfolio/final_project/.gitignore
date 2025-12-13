@@ -1,9 +1,0 @@
-
-# .NET build artifacts
-bin/
-obj/
-*.dll
-*.exe
-*.pdb
-.DS_Store
-Thumbs.db
