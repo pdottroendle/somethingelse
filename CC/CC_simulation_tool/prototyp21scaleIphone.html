@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Input Processing and Evaluation System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0 auto;
+            max-width: 100%;
+        }
+        .input-group {
+            margin: 10px 0;
+        }
+        #topRightImage {
+            width: 100%;
+            max-width: 450px;
+            height: auto;
+        }
+        #bodytext, #bodytext2 {
+            position: absolute;
+            width: 30%;
+        }
+        #bodytext {
+            left: 30%;
+            top: 40%;
+            transform: translate(-30%, -40%);
+                left: 60%;
+            top: 40%;
+            transform: translate(-60%, -40%);
+        }
+        #userInput {
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+        }
+        @media (max-width: 768px) {
+            #bodytext, #bodytext2 {
+                width: 80%;
+                left: 10%;
+                top: 50%;
+                transform: translate(-10%, -50%);
+            }
+            #bodytext2 {
+                top: 60%;
+            }
+        }
+        @media (max-width: 480px) {
+            #bodytext, #bodytext2 {
+                width: 90%;
+                left: 5%;
+                top: 50%;
+                transform: translate(-5%, -50%);
+            }
+            #bodytext2 {
+                top: 70%;
+            }
+            #topRightImage {
+                width: 90%;
+                max-width: none;
+            }
+        }
+        #canvas {
+            margin-top: -20px;
+            display: block;
+            margin-left: 10%;
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body>
+    Apr 13 3:50 AM PST - WA, USA &nbsp;&nbsp;
+    <div class="container">
+        <div class="input-group">
+            <label for="inputA"></label>
+            <input type="text" id="inputA" placeholder="Enter hex string A">
+        </div>
+        <div class="input-group">
+            <label for="inputB"></label>
+            <input type="text" id="inputB" placeholder="Enter hex string B">
+        </div>
+        <div class="input-group">
+            <input type="text" id="updateInput" placeholder="Test set 0/B[2] 0.0.1.0=1">
+        </div>
+        <h1>Dynamic Input Processing and Evaluation System</h1><br><br>
+        <img src="Scale.jpg" id="topRightImage" alt="scale map">
+        <div id="bodytext">
+            <label for="userInput"></label>
+            <textarea id="userInput" rows="10" cols="21" oninput="updateMasterBool()"></textarea>
+        </div>
+        <div id="bodytext2">
+            <label for="masterBoolDisplay"></label>
+            <pre id="masterBoolDisplay"></pre>
+        </div>
+        <canvas id="canvas" width="800" height="800"></canvas>
+    </div>
+    <script>
+        window.addEventListener('resize', () => {
+            const img = document.getElementById('topRightImage');
+            const bodytext = document.getElementById('bodytext');
+            const bodytext2 = document.getElementById('bodytext2');
+            const canvas = document.getElementById('canvas');
+            
+            img.style.width = window.innerWidth / 2 + 'px';
+            
+            // Adjust the text box positions based on the image size
+            const imgRect = img.getBoundingClientRect();
+            bodytext.style.left = imgRect.left + imgRect.width * 0.3 + 'px';
+            bodytext.style.top = imgRect.top + imgRect.height * 0.4 + 'px';
+            bodytext2.style.left = imgRect.left + imgRect.width * 0.6 + 'px';
+            bodytext2.style.top = imgRect.top + imgRect.height * 0.4 + 'px';
+            
+            // Adjust the canvas position
+            canvas.style.marginTop = '20px';
+            canvas.style.marginLeft = 'auto';
+            canvas.style.marginRight = 'auto';
+        });
+
+        // Initial adjustment
+        window.dispatchEvent(new Event('resize'));
+
+let boxes = [];
+ 
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('inputA').addEventListener('input', updateBoxes);
+    document.getElementById('inputB').addEventListener('input', updateBoxes);
+    document.getElementById('userInput').addEventListener('input', updateMasterBool);
+    document.getElementById('updateInput').addEventListener('input', updateBox);
+
+    let masterBoolObject = '{"forward":[{"A":["A[0]",0,0,0]},{"B":["B[0]",0,0,"A[1] # B[1]"]},{"O":["A[0] && B[1]",0,"A[2] && !O[0]",0]}],"backward":[{"dx":[0,0,0,0]},{"cx":[0,0,0,0]},{"sx":[0,0,0,0]}]}'
+	/*{
+        "forward": [
+            { "D": ["A[0]", 0, 0, 0] },
+            { "C": ["B[0]", 0, 0, 0] },
+            { "S": ["A[0] && B[0] || O[0]", 0, 0, 0] }
+        ],
+        "backward": [
+            { "ax": [0, 0, 0, 0] },
+            { "bx": [0, 0, 0, 0] },
+            { "ox": [0, 0, 0, 0] }
+        ]
+    };*/
+
+    function updateMasterBool() {
+        const jsonInput = document.getElementById('userInput').value;
+//        try {
+            masterBoolObject = jsonInput; //JSON.parse(jsonInput);
+            console.log('MasterboolObject updated:', masterBoolObject);
+            displayMasterBoolObject();
+ //       } catch (e) {
+ //           console.error('Invalid JSON input for MasterboolObject');
+ //           document.getElementById('masterBoolDisplay').textContent = 'Invalid JSON';
+ //       }
+    }
+	
+    function displayMasterBoolObject() {
+        const masterBoolDisplay = document.getElementById('masterBoolDisplay');
+        masterBoolDisplay.textContent = formatJSON(JSON.parse(masterBoolObject));
+        document.getElementById('userInput').value = masterBoolObject;
+		updateBoxes()
+    }
+	
+// Convert the object to a JSON string
+const masterBoolObjectString = JSON.stringify(masterBoolObject);
+	
+    function updateBoxes() {
+        const A = document.getElementById('inputA').value;
+        const B = document.getElementById('inputB').value;
+
+        let ix = 0;
+		// line 0 element i=0...N from inputA populates, the.. untill j=N line
+        // left right (i:0-N) then next line and so forth (j:0-N)
+		for (let j = 0; j < B.length; j++) {
+            for (let i = 0; i < A.length; i++) {
+                boxes.push({
+                    forward: [
+                        { A: j === 0 ? hexToNibble(A[i]) : [0, 0, 0, 0] },
+                        { B: i === 0 ? hexToNibble(B[j]) : [0, 0, 0, 0] },
+                        { O: [0, 0, 0, 0] }
+                    ],
+                    backward: [
+                        { dx: [0, 0, 0, 0] },
+                        { cx: [0, 0, 0, 0] },
+                        { sx: [0, 0, 0, 0] }
+                    ]
+                });
+	        console.log(ix +' : 1st bit A[0] : '+ JSON.stringify(boxes[ix].forward[0].A[0], null, 2) +' Bool objects evaluated:',  formatJSON(boxes[ix].forward)); ix++;
+            }
+        }
+        //evaluateBoolObject(boxes);
+        drawCanvas(evaluateBoolObject(boxes), A, B);
+    }
+
+    function hexToNibble(hex) {
+        const num = parseInt(hex, 16);
+        return [num & 1, (num >> 1) & 1, (num >> 2) & 1, (num >> 3) & 1];
+    }
+
+  
+function evaluateBoolObject(boxes) {
+    for (let i = 0; i < boxes.length; i++) {
+        let box = boxes[i];
+        let xscale = document.getElementById('inputA').value.length;
+
+        let A, B, O;
+        if (i < xscale) {
+            A = box.forward[0].A; // x axis
+       	    console.log( 'box.forward[0].A' +  box.forward[0].A); 
+
+        } else {
+            A = boxes[i - xscale].forward[0].A; 
+	        console.log( 'boxes[i - xscale].forward[0].A' + boxes[(i - xscale)].forward[0].A );
+
+        }
+
+        if (i % xscale === 0) {
+            B = box.forward[1].B; // y axis
+       	    console.log( 'box.forward[1].B' +  box.forward[1].B); 
+        } else {
+            B = boxes[i - 1].forward[1].B;
+	        console.log( 'boxes[i - 1].forward[1].B' + boxes[i - 1].forward[1].B );
+        }
+
+        if (i < xscale || i % xscale === 0) {
+            O = box.forward[2].O; // z axis
+       	    console.log( 'box.forward[2].O' +  box.forward[2].O); 
+        } else {
+            O = boxes[i - xscale - 1].forward[2].O;
+	        console.log( 'boxes[i - xscale - 1].forward[2].O' + boxes[i - xscale - 1].forward[2].O );
+        }
+
+        //const boolObject = JSON.parse(masterBoolObjectString);
+		const userInputString = document.getElementById('userInput').value;
+        //console.log(i +' masterBoolObjectString ========================== Evaluation of Boolean SEED',  formatJSON(boolObject.forward));
+	
+
+        //const userInput2 = '{"forward":[{"A":["A[0]",0,0,0]},{"B":["B[0]",0,0,"A[1] # B[1]"]},{"O":["A[0] && B[1]",0,"A[2] && !O[0]",0]}],"backward":[{"dx":[0,0,0,0]},{"cx":[0,0,0,0]},{"sx":[0,0,0,0]}]}';
+        const boolObject = JSON.parse(userInputString);
+
+function evaluateExpression(expression, A, B, O) {
+
+    if (typeof expression !== 'string') {
+        return expression; // Return the value as is if it's not a string
+    }
+
+    // Replace placeholders with actual values
+    expression = expression.replace(/A\[(\d+)\]/g, (match, index) => A[index]);
+    expression = expression.replace(/B\[(\d+)\]/g, (match, index) => B[index]);
+    expression = expression.replace(/O\[(\d+)\]/g, (match, index) => O[index]);
+
+    // Replace boolean operators with JavaScript equivalents
+    expression = expression.replace(/#/g, '^'); // EXOR
+    expression = expression.replace(/!/g, '!'); // NOT
+    expression = expression.replace(/&&/g, '&&'); // AND
+    expression = expression.replace(/\|\|/g, '||'); // OR
+
+    // Evaluate the expression and convert boolean results to integers
+    return eval(expression) ? 1 : 0;
+
+}
+
+function evaluateMasterBoolObject(A, B, O, masterBoolObject) {
+    masterBoolObject.forward.forEach(item => {
+        Object.keys(item).forEach(key => {
+            item[key] = item[key].map(expr => evaluateExpression(expr, A, B, O));
+        });
+    });
+
+    return masterBoolObject;
+}
+
+boxes[i] = evaluateMasterBoolObject(A, B, O, boolObject);
+console.log(i +' :Bool objects evaluated:',  formatJSON(boxes[i].forward));
+/*
+       const variables = ['A', 'B', 'O', 'dx', 'cx', 'sx'];
+        variables.forEach(variable => {
+            for (let j = 0; j <= 3; j++) {
+                const regex = new RegExp(`${variable}\\[${j}\\]`, 'g');
+                const value = box.forward.find(obj => obj[variable])?.[variable]?.[j] ?? box.backward.find(obj => obj[variable])?.[variable]?.[j];
+                if (value !== undefined) {
+                    boolObject.forward.forEach(obj => {
+                        Object.keys(obj).forEach(key => {
+                            obj[key] = obj[key].map(item => typeof item === 'string' ? item.replace(regex, value) : item);
+                        });
+                    });
+                    boolObject.backward.forEach(obj => {
+                        Object.keys(obj).forEach(key => {
+                            obj[key] = obj[key].map(item => typeof item === 'string' ? item.replace(regex, value) : item);
+                        });
+                    });
+                }
+            }
+        });
+
+        // Evaluate the replaced strings
+        boolObject.forward.forEach(obj => {
+            Object.keys(obj).forEach(key => {
+                obj[key] = obj[key].map(item => typeof item === 'string' ? eval(item) : item);
+            });
+        });
+        boolObject.backward.forEach(obj => {
+            Object.keys(obj).forEach(key => {
+                obj[key] = obj[key].map(item => typeof item === 'string' ? eval(item) : item);
+            });
+        });
+
+        boxes[i] = boolObject;
+        console.log(i +' :Bool objects evaluated:',  formatJSON(boxes[i].forward));
+*/
+    }
+    return boxes;
+}
+
+
+function drawCanvas(boxes, A, B) {
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const boxSize = 800 / Math.max(A.length, B.length);
+    boxes.forEach((box, index) => {
+        const x = (index % A.length) * boxSize;
+        const y = Math.floor(index / A.length) * boxSize;
+
+        let a0, b0, o0;
+        box.forward.forEach(item => {
+            if (item.A) {a0 = item.A[0]; a1 = item.A}
+            if (item.B) {b0 = item.B[0]; b1 = item.B}
+            if (item.O) {o0 = item.O[0]; o1 = item.O}
+        });
+
+        console.log( `BOX: ${JSON.stringify(box.forward)}, A: ${a0}, B: ${b0}, O: ${o0}`); //`x: ${(index % B.length)}, y: ${y},
+  
+            ctx.strokeRect(x, y, boxSize / 3, boxSize / 3);
+
+            // Put a dot in the boxes with A[0] or B[0] set
+            if (a0 || b0) {
+                ctx.beginPath();
+                ctx.arc(x + boxSize / 6, y + boxSize / 6, 2, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+
+            // Draw lines 
+            if (a0 && y + boxSize < 800) {
+                ctx.beginPath();
+                ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+                ctx.lineTo(x + boxSize / 6, y + boxSize / 6 + boxSize);
+                ctx.stroke();
+            }
+            if (b0 && x + boxSize < 800) {
+                ctx.beginPath();
+                ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+                ctx.lineTo(x + boxSize / 6 + boxSize, y + boxSize / 6);
+                ctx.stroke();
+            }
+            if (o0 && x + boxSize < 800 && y + boxSize < 800) {
+                ctx.beginPath();
+                ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+                ctx.lineTo(x + boxSize / 6 + boxSize, y + boxSize / 6 + boxSize);
+                ctx.stroke();
+            }
+
+        // Print hex values inside each box
+        ctx.font = '8px Arial';
+        ctx.fillText(`A: ${a1}`, x + 2, y + 10);
+        ctx.fillText(`B: ${b1}`, x + 2, y + 20);
+        ctx.fillText(`O: ${o1}`, x + 2, y + 30);
+        });
+    }
+	
+
+    function formatJSON(json) {
+        return JSON.stringify(json, null, 2)
+            .replace(/\[\s+/g, '[')
+            .replace(/\s+\]/g, ']')
+            .replace(/\s*,\s*/g, ',')
+            .replace(/,\n\s+/g, ',\n')
+            .replace(/],/g, '],\n');
+    }
+
+ function updateBox() {
+            const input = document.getElementById('updateInput').value;
+            const [groupAliasIndex, value] = input.split('=');
+            const [order, group, alias, index] = groupAliasIndex.split('.').map(Number);
+
+            console.log(`Updating box at order: ${order}, group: ${group}, alias: ${alias}, index: ${index} with value: ${value}`);
+
+            if (group === 0) {
+                const key = Object.keys(boxes[order].forward[alias])[0];
+                boxes[order].forward[alias][key][index] = Number(value);
+                console.log(`Updated forward: ${JSON.stringify(boxes[order].forward[alias])}`);
+            } else if (group === 1) {
+                const key = Object.keys(boxes[order].backward[alias])[0];
+                boxes[order].backward[alias][key][index] = Number(value);
+                console.log(`Updated backward: ${JSON.stringify(boxes[order].backward[alias])}`);
+            }
+
+            document.getElementById('masterBoolDisplay').textContent = formatJSON(boxes[order]);
+            updateBoxes();
+        }
+    
+	window.onload = displayMasterBoolObject;
+
+});		
+/*=================================================================================
+each box has its own boolObject and boxes values
+check that evaluateBoolObject is evaluating the boxes values, 
+together with booleans from the masterBoolObject, 
+and putting the result inside the respective boolObject
+
+1. the user enters in 2 inputs box strings of hex called A and B 
+2. the input event causes the following:
+3. create an array of boxes (each withe their own json object and bool object): lenght of A x length of B, in term of number of hex characters  
+4. each hex  is converted in a nibble[3..0] and populates a json object instance in its relevant place 
+json object:
+{
+  "forward": [{
+      "A": [0,0,0,0]
+    },{
+      "B": [0,0,0,0]
+    },{
+      "O": [0,0,0,0]
+    }],
+"backward": [{
+      "dx": [0,0,0,0]
+    },{
+      "cx": [0,0,0,0]
+    },{
+      "sx": [0,0,0,0]
+    }]
+}
+4. the json object instances updated by A populate the y axis left edge of the boxes array
+5. the json object instances updated by B instances populate the x axis top edge of the boxes array
+6. the rest of the boxes array are json objects unchanged
+7. there is a MasterboolObject that the user can update (input field showing its value so the user can update it) 
+MasterboolObject = {
+            forward: [
+                { D: ['A[0]', 0, 0, 0] },
+                { C: ['B[0]', 0, 0, 0] },
+                { S: [ 'A[0]&&B[0] || O[0]', 0, 0, 0] }
+            ],
+            backward: [
+                { ax: [0, 0, 0, 0] },
+                { bx: [0, 0, 0, 0] },
+                { ox: [0, 0, 0, 0] }
+            ]
+        };
+ 8. each box will use its own json object and apply the MasterboolObject using it to create the 
+boolObject 
+boolObject = {
+            forward: [
+                { D: [0, 0, 0, 0] },
+                { C: [0, 0, 0, 0] },
+                { S: [0, 0, 0, 0] }
+            ],
+            backward: [
+                { ax: [0, 0, 0, 0] },
+                { bx: [0, 0, 0, 0] },
+                { ox: [0, 0, 0, 0] }
+            ]
+        };
+9. a canvas 800x800 animation should start showing all the boxes (1/3 sqare box and 2/3 of the inbetween space)
+10. D should yield a y axis line connecting middle to the next bottom box setting its A value identical to it (except the top edge boxes)
+11. C should yield a x axis line connecting middle to the next right box setting its B value identical to it (except the left edge boxes)
+12. S should yield a z axis line connecting middle to the next bottom right box setting its O value identical to it (except the top and left edge boxes)
+13. draw very fine and parallel lines for each corresponding bool Object that is = 1
+14. start from the top left box go to the right and do it one line at the time from topo to bottom in 1 second time approximately		
+// DEBUG
+// console.log(i +' : boxes.length : '+ boxes.length + 'xscale' + xscale + '(i % xscale === 0)' + (i % xscale === 0));
+// console.log( '(i < xscale || i % xscale === 0)' + (i < xscale || i % xscale === 0)); 
+// Parse the JSON string back to an object
+// const boolObject = masterBoolObject; // wont work the destination backpropagates back to the origin, because its the way JS handles the memory 
+// console.log(i +' bool ========================== Evaluation of Boolean SEED',  formatJSON(boolObject.forward));
+// We need to create a uphill barrier, stringify then parse.
+=========================================================================*/ </script>
+</body>
+</html>
