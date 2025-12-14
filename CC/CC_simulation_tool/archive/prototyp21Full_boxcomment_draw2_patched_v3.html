@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <title>ABCDOS Grid — SEED Between-Boxes (patched v3)</title>
+  <style>
+    :root { --green:#32CD32; --port:#333; --grid:#aaa; --label:#444; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 20px; }
+    pre { background: #f6f8fa; padding: 12px; border-radius: 8px; overflow:auto; }
+    .toolbar { margin: 10px 0; display:flex; gap:12px; align-items:center; }
+    .toolbar input[type=range] { width: 240px; }
+    canvas { border:1px dashed var(--grid); }
+  </style>
+</head>
+<body>
+  <pre># ABCDOS Grid — Ports + SEED-only Green Lines
+Port locations per box (FORWARD):
+A→TOP (4 points horizontally), B→LEFT (4 vertically), O→TOP-LEFT corner (cluster of 4),
+C→RIGHT (4 vertically), D→BOTTOM (4 horizontally), S→BOTTOM-RIGHT corner (cluster of 4).
+Backward (same physical locations): outputs ax(top), bx(left), ox(top-left); inputs dx(bottom), cx(right), sx(bottom-right).
+Rendering: Port dots always drawn. Green lines only for SEED augmentation when output bit eval==1. If SEED contains NULL or starts with backslash, line shows only on EDGE boxes. Pass-through (A→D, B→C, O→S) does not draw.
+</pre>
+  <div class='toolbar'>
+    <label>Zoom: <input id='zoomSlider' type='range' min='50' max='400' value='100'></label>
+    <span id='zoomLabel'>100%</span>
+  </div>
+  <canvas id='gridCanvas' width='800' height='600'></canvas>
+
+  <script>
+  const CFG = {
+    EDGE_PREFIX: '\\',
+    LANES: 4,
+    PORT_RADIUS: 2.5,
+    PORT_STROKE: 1,
+    PORT_COLOR: '#333',
+    WIRE_COLOR: '#32CD32',
+    WIRE_WIDTH: 2,
+    WIRE_CAP: 'round',
+    CORNER_OFFSET: 6,
+    SIDE_MARGIN: 6
+  };
+
+  const grid = { cols: 3, rows: 2, boxW: 160, boxH: 120, gapX: 30, gapY: 30 };
+
+  const Zoom = (function(){
+    let scale = 1.0; let panX = 0, panY = 0;
+    function attach(canvas){
+      const slider = document.getElementById('zoomSlider');
+      const label  = document.getElementById('zoomLabel');
+      canvas.addEventListener('wheel', (e)=>{ e.preventDefault(); const f = e.deltaY>0 ? 0.9 : 1.1; scale = Math.max(0.5, Math.min(4.0, scale*f)); if (slider) slider.value = String(Math.round(scale*100)); if (label) label.textContent = slider.value + '%'; redraw(); }, {passive:false});
+      if (slider) slider.addEventListener('input', ()=>{ scale = Math.max(0.5, Math.min(4.0, parseInt(slider.value,10)/100)); if (label) label.textContent = slider.value + '%'; redraw(); });
+    }
+    function apply(ctx){ ctx.setTransform(scale,0,0,scale,panX,panY); }
+    function getScale(){ return scale; }
+    return { attach, apply, getScale };
+  })();
+
+  function isEdgeBox(x,y){ return x===0 || y===0 || x===grid.cols-1 || y===grid.rows-1; }
+  function rectForBox(bx,by){ return { x: 20 + bx*(grid.boxW+grid.gapX), y: 20 + by*(grid.boxH+grid.gapY), w: grid.boxW, h: grid.boxH }; }
+
+  function horizontalSideAnchors(rect, lanes, top){ const m=CFG.SIDE_MARGIN; const usable=rect.w-2*m; const step=usable/(lanes+1); const y= top? rect.y: rect.y+rect.h; const arr=[]; for(let i=1;i<=lanes;i++){ const x=rect.x+m+i*step; arr.push({x:x, y: top? y+2 : y-2}); } return arr; }
+  function verticalSideAnchors(rect, lanes, left){ const m=CFG.SIDE_MARGIN; const usable=rect.h-2*m; const step=usable/(lanes+1); const x= left? rect.x: rect.x+rect.w; const arr=[]; for(let i=1;i<=lanes;i++){ const y=rect.y+m+i*step; arr.push({x: left? x+2 : x-2, y:y}); } return arr; }
+  function cornerClusterAnchors(rect, corner){ const o=CFG.CORNER_OFFSET; const pts=[]; const dx=[0,o]; const dy=[0,o]; for(let iy=0;iy<2;iy++){ for(let ix=0;ix<2;ix++){ let x=rect.x, y=rect.y; if(corner==='TL'){ x+=dx[ix]+2; y+=dy[iy]+2; } if(corner==='TR'){ x+=rect.w-dx[ix]-2; y+=dy[iy]+2; } if(corner==='BL'){ x+=dx[ix]+2; y+=rect.h-dy[iy]-2; } if(corner==='BR'){ x+=rect.w-dx[ix]-2; y+=rect.h-dy[iy]-2; } pts.push({x:x,y:y}); } } return pts; }
+
+  const PortAnchors = {
+    forward(rect){ return { A: horizontalSideAnchors(rect, CFG.LANES, true), B: verticalSideAnchors(rect, CFG.LANES, true), O: cornerClusterAnchors(rect,'TL'), C: verticalSideAnchors(rect, CFG.LANES, false), D: horizontalSideAnchors(rect, CFG.LANES, false), S: cornerClusterAnchors(rect,'BR') }; },
+    backward(rect){ return { AX: horizontalSideAnchors(rect, CFG.LANES, true), BX: verticalSideAnchors(rect, CFG.LANES, true), OX: cornerClusterAnchors(rect,'TL'), CX: verticalSideAnchors(rect, CFG.LANES, false), DX: horizontalSideAnchors(rect, CFG.LANES, false), SX: cornerClusterAnchors(rect,'BR') }; }
+  };
+
+  function drawPorts(ctx, rect, order){ const map = (order==='forward')? PortAnchors.forward(rect): PortAnchors.backward(rect); ctx.save(); ctx.strokeStyle=CFG.PORT_COLOR; ctx.lineWidth=CFG.PORT_STROKE; for(const k in map){ for(const p of map[k]){ ctx.beginPath(); ctx.arc(p.x,p.y,CFG.PORT_RADIUS,0,Math.PI*2); ctx.stroke(); } } ctx.restore(); }
+
+  function neighborXY(order, alias, laneIdx, x, y){ const a=alias.toUpperCase(); if(order==='forward'){ if(a==='A') return {nx:x,ny:y-1,counterpart:'D'}; if(a==='B') return {nx:x-1,ny:y,counterpart:'C'}; if(a==='O') return {nx:x-1,ny:y-1,counterpart:'S'}; } else { if(a==='AX') return {nx:x,ny:y+1,counterpart:'DX'}; if(a==='BX') return {nx:x+1,ny:y,counterpart:'CX'}; if(a==='OX') return {nx:x+1,ny:y+1,counterpart:'SX'}; } return null; }
+
+  function parseSeedSpec(spec){ if(!spec||typeof spec!=='string') return null; let raw=spec.trim(); let edge=false; if(raw.startsWith(CFG.EDGE_PREFIX)){ edge=true; raw=raw.slice(CFG.EDGE_PREFIX.length); } const m=raw.match(/^([A-Za-z]+)\[(\d+)\](.*)$/); if(!m) return null; const alias=m[1].toUpperCase(); const idx=parseInt(m[2],10); const expr=(m[3]||'').trim(); const containsNull=/NULL/i.test(spec); return {alias, idx, expr, edgeGuarded:edge, containsNull}; }
+  function shouldDrawWire(seedSpec, isEdge, value){ if(!seedSpec) return false; if(value!==1) return false; if(seedSpec.containsNull || seedSpec.edgeGuarded) return !!isEdge; return true; }
+  function drawWire(ctx,p1,p2){ ctx.save(); ctx.strokeStyle=CFG.WIRE_COLOR; ctx.lineWidth=CFG.WIRE_WIDTH; ctx.lineCap=CFG.WIRE_CAP; ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke(); ctx.restore(); }
+  function getPortAnchor(rect, order, alias, laneIdx){ const map=(order==='forward')? PortAnchors.forward(rect): PortAnchors.backward(rect); const arr=map[alias]; if(!arr) return null; return arr[laneIdx%arr.length]; }
+
+  function renderBox(ctx,bx,by,order,seedSpecsForOutputs,getEvalValue){ const rect=rectForBox(bx,by); ctx.save(); ctx.setLineDash([6,4]); ctx.strokeStyle='#7a7a7a'; ctx.strokeRect(rect.x,rect.y,rect.w,rect.h); ctx.restore(); drawPorts(ctx,rect,order); const edge=isEdgeBox(bx,by); for(const spec of seedSpecsForOutputs){ const parsed=parseSeedSpec(spec); if(!parsed) continue; const outAliases=(order==='forward')? ['A','B','O'] : ['AX','BX','OX']; if(!outAliases.includes(parsed.alias)) continue; const value=getEvalValue(parsed.alias, parsed.idx, bx, by, order); if(!shouldDrawWire(parsed, edge, value)) continue; const nbr=neighborXY(order, parsed.alias, parsed.idx, bx, by); if(!nbr) continue; if(nbr.nx<0||nbr.ny<0||nbr.nx>=grid.cols||nbr.ny>=grid.rows) continue; const p1=getPortAnchor(rect, order, parsed.alias, parsed.idx); const p2=getPortAnchor(rectForBox(nbr.nx,nbr.ny), order, nbr.counterpart, parsed.idx); if(p1&&p2) drawWire(ctx,p1,p2); } }
+
+  function demoEval(alias, idx, bx, by, order){ if(idx===0 && by===0) return 1; return 0; }
+  function redraw(){ const canvas=document.getElementById('gridCanvas'); const ctx=canvas.getContext('2d'); ctx.save(); Zoom.apply(ctx); ctx.clearRect(0,0,canvas.width,canvas.height); for(let by=0;by<grid.rows;by++){ for(let bx=0;bx<grid.cols;bx++){ const order=(by===0)? 'forward':'backward'; const seeds=(order==='forward')? ['A[0] NULL','\B[0]','O[0]'] : ['AX[0]','\BX[0] NULL','OX[0]']; renderBox(ctx,bx,by,order,seeds,demoEval); } } ctx.restore(); }
+  const canvas=document.getElementById('gridCanvas'); Zoom.attach(canvas); window.addEventListener('load',redraw);
+  </script>
+</body>
+</html>

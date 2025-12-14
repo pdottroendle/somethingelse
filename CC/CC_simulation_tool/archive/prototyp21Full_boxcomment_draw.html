@@ -1,0 +1,81 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dynamic Input Processing & Evaluation — Draw Ports + SEED Lines</title>
+  <style>
+    body { font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif; margin: 16px; }
+    .row { display: flex; gap: 16px; align-items: flex-start; }
+    .panel { min-width: 320px; }
+    .label { font-weight: 600; margin-bottom: 4px; display: inline-block; }
+    input[type=text] { width: 100%; padding: 6px 8px; box-sizing: border-box; }
+    pre { background: #f7f7f9; padding: 10px; border: 1px solid #ddd; white-space: pre-wrap; min-height: 180px; }
+    .hint { font-size: 12px; color: #555; }
+    .ok { color: #00a362; }
+    canvas { border: 1px solid #ddd; background: #fff; }
+  </style>
+</head>
+<body>
+  <h1>Dynamic Input Processing & Evaluation — Draw Ports + SEED Lines</h1>
+
+  <div class="row">
+    <div class="panel">
+      <label for="updateInput" class="label">Ad-hoc Input (single point)</label>
+      <input id="updateInput" type="text" placeholder="order.alias.index=value (e.g., 0.0.0=1)" />
+      <div class="hint">Short form hits forward inputs (<code>0→A, 1→B, 2→O</code>). Full form also accepted: <code>order.group.alias.index=value</code> (<code>group 0→forward</code>, <code>1→backward</code>: <code>dx,cx,sx</code>).</div>
+      <div id="selectionDisplay" class="ok" style="margin-top:8px; font-weight:bold;"></div>
+      <div id="debugDisplay" class="hint" style="margin-top:4px;"></div>
+    </div>
+    <div class="panel">
+      <span id="masterBoolDisplayLabel" class="label">Display (current box state)</span>
+      <pre id="masterBoolDisplay" aria-labelledby="masterBoolDisplayLabel"></pre>
+    </div>
+  </div>
+
+  <div style="margin-top:16px;" class="panel">
+    <span class="label">Canvas</span>
+    <canvas id="gridCanvas" width="900" height="500"></canvas>
+    <div class="hint">Green lines are drawn only where a <strong>SEED override</strong> exists; if the expression contains <code>NULL</code> or starts with a backslash (edge guard), the line appears <em>only</em> on edge boxes.</div>
+  </div>
+
+  <script>
+    const GRID_W = 4, GRID_H = 2, CELL_W = 200, CELL_H = 140, BOX_PAD = 18;
+    const boxes = [];
+    function newBox(){return{forward:[{A:[0,0,0,0],D:[0,0,0,0]},{B:[0,0,0,0],C:[0,0,0,0]},{O:[0,0,0,0],S:[0,0,0,0]}],backward:[{dx:[0,0,0,0],ax:[0,0,0,0]},{cx:[0,0,0,0],bx:[0,0,0,0]},{sx:[0,0,0,0],ox:[0,0,0,0]}]};}
+    function getOrCreateBox(o){if(!Number.isFinite(o)||o<0)return null; if(!boxes[o]) boxes[o]=newBox(); return boxes[o];}
+    function isEdge(o){const x=o%GRID_W,y=Math.floor(o/GRID_W);return x===0||y===0||x===GRID_W-1||y===GRID_H-1;}
+    function normalizeEdgeInputs(o){const b=boxes[o]; if(!b||!isEdge(o))return; ['A','B','O'].forEach((k,gi)=>{for(let i=0;i<4;i++) b.forward[gi][k][i]??=0;}); ['dx','cx','sx'].forEach((k,gi)=>{for(let i=0;i<4;i++) b.backward[gi][k][i]??=0;});}
+
+    const MasterboolObject={forward:[{D:['A[0]',0,0,0]},{C:['B[0]',0,0,0]},{S:['A[0]&&B[0] || O[0]',0,0,0]}],backward:[{ax:[0,0,0,0]},{bx:[0,0,0,0]},{ox:[0,0,0,0]}]};
+    const DEFAULTS={D:['A[0]','A[1]','A[2]','A[3]'],C:['B[0]','B[1]','B[2]','B[3]'],S:['O[0]','O[1]','O[2]','O[3]']};
+    function normalizeSeed(m){['D','C','S'].forEach((n,gi)=>{const a=m.forward[gi][n]; if(!a||!a.length)m.forward[gi][n]=DEFAULTS[n].slice(); else for(let i=0;i<4;i++) if(a[i]===undefined||a[i]==='') a[i]=DEFAULTS[n][i];});}
+
+    function evaluateExpression(e,o){if(typeof e!=='string') return(e?1:0); if(e.startsWith('\\')){if(!isEdge(o))return 0; e=e.slice(1);} e=e.replace(/#/g,'^').replace(/!/g,'!').replace(/&&/g,'&&').replace(/\|\|/g,'||'); e=e.replace(/([ABO])\[(\d)\]/g,(_,k,i)=>{const gi={A:0,B:1,O:2}[k]; return (boxes[o].forward[gi][k][+i]||0);}).replace(/(ax|bx|ox)\[(\d)\]/g,(_,k,i)=>{const gi={ax:0,bx:1,ox:2}[k]; return (boxes[o].backward[gi][k][+i]||0);}); try{return new Function(`return (${e}) ? 1 : 0;`)();}catch{return 0;}}
+
+    function evaluateBox(o){const b=getOrCreateBox(o); normalizeEdgeInputs(o); normalizeSeed(MasterboolObject); for(let i=0;i<4;i++){b.forward[0].D[i]=b.forward[0].A[i]; b.forward[1].C[i]=b.forward[1].B[i]; b.forward[2].S[i]=b.forward[2].O[i];} const map=[{name:'D',gi:0},{name:'C',gi:1},{name:'S',gi:2}]; for(const {name,gi} of map){const a=MasterboolObject.forward[gi][name]; for(let i=0;i<4;i++){const ex=a[i]; if(ex!==undefined&&ex!==''){const v=evaluateExpression(ex,o); b.forward[gi][name][i]=v?1:0;}}}}
+    function evaluateAll(){for(let o=0;o<GRID_W*GRID_H;o++){getOrCreateBox(o);evaluateBox(o);}}
+
+    const canvas=document.getElementById('gridCanvas'); const ctx=canvas.getContext('2d');
+    function boxRect(o){const x=(o%GRID_W)*CELL_W+20,y=Math.floor(o/GRID_W)*CELL_H+20; return{ x, y, w:CELL_W-40, h:CELL_H-40 } }
+    function drawCircle(x,y,r,f){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=f?'#111':'#fff';ctx.strokeStyle='#444';ctx.lineWidth=1;ctx.fill();ctx.stroke();}
+    function portXY(o,a,i){const {x,y,w,h}=boxRect(o), stepV=18, stepH=28; switch(a){case 'A': return{ x:x+BOX_PAD, y:y+BOX_PAD+i*stepV }; case 'B': return{ x:x+BOX_PAD+22, y:y+BOX_PAD+i*stepV }; case 'O': return{ x:x+BOX_PAD+44, y:y+BOX_PAD+i*stepV }; case 'dx': return{ x:x+BOX_PAD+i*stepH, y:y+BOX_PAD }; case 'cx': return{ x:x+BOX_PAD+i*stepH, y:y+BOX_PAD+16 }; case 'sx': return{ x:x+BOX_PAD+i*stepH, y:y+BOX_PAD+32 }; case 'D': return{ x:x+(w-BOX_PAD-44), y:y+BOX_PAD+i*stepV }; case 'C': return{ x:x+(w-BOX_PAD-22), y:y+BOX_PAD+i*stepV }; case 'S': return{ x:x+(w-BOX_PAD), y:y+BOX_PAD+i*stepV }; case 'ax': return{ x:x+BOX_PAD+i*stepH, y:y+(h-BOX_PAD-32) }; case 'bx': return{ x:x+BOX_PAD+i*stepH, y:y+(h-BOX_PAD-16) }; case 'ox': return{ x:x+BOX_PAD+i*stepH, y:y+(h-BOX_PAD) }; default: return{ x:x+w/2, y:y+h/2 }; }}
+
+    function drawBoxesAndPorts(){ctx.clearRect(0,0,canvas.width,canvas.height); ctx.font='12px system-ui'; for(let o=0;o<GRID_W*GRID_H;o++){const {x,y,w,h}=boxRect(o); ctx.strokeStyle='#222'; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,h); ctx.fillStyle='#555'; ctx.fillText(`Box ${o}${isEdge(o)?' (EDGE)':''}`, x+6, y-4); const fIn=['A','B','O'], fOut=['D','C','S'], bIn=['dx','cx','sx'], bOut=['ax','bx','ox']; for(const a of fIn) for(let i=0;i<4;i++){const p=portXY(o,a,i); const v=boxes[o].forward[{A:0,B:1,O:2}[a]][a][i]; drawCircle(p.x,p.y,4,v);} for(const a of fOut) for(let i=0;i<4;i++){const p=portXY(o,a,i); const v=boxes[o].forward[{D:0,C:1,S:2}[a]][a][i]; drawCircle(p.x,p.y,4,v);} for(const a of bIn) for(let i=0;i<4;i++){const p=portXY(o,a,i); const v=boxes[o].backward[{dx:0,cx:1,sx:2}[a]][a][i]; drawCircle(p.x,p.y,4,v);} for(const a of bOut) for(let i=0;i<4;i++){const p=portXY(o,a,i); const v=boxes[o].backward[{ax:0,bx:1,ox:2}[a]][a][i]; drawCircle(p.x,p.y,4,v);} }}
+
+    function refsFromExpr(ex){if(typeof ex!=='string')return[]; const list=[]; const rx=/\?([ABO]|dx|cx|sx|ax|bx|ox)\[(\d)\]/g; let m; while((m=rx.exec(ex))!==null){list.push({alias:m[1],idx:+m[2],guarded:ex.startsWith('\')||ex.includes('NULL')});} return list;}
+    function drawSeedLines(){ctx.lineWidth=1.5; ctx.strokeStyle='#00c853'; const outs=[{name:'D',gi:0},{name:'C',gi:1},{name:'S',gi:2}]; for(let o=0;o<GRID_W*GRID_H;o++){for(const {name,gi} of outs){const arr=MasterboolObject.forward[gi][name]; for(let i=0;i<4;i++){const ex=arr[i]; if(ex===undefined||ex==='') continue; const guarded=ex.startsWith('\')||ex.includes('NULL'); if(guarded&&!isEdge(o)) continue; const refs=refsFromExpr(ex); const to=portXY(o,name,i); for(const r of refs){const from=portXY(o,r.alias,r.idx); ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(to.x,to.y); ctx.stroke(); } } } } }
+
+    function drawCanvas(){drawBoxesAndPorts(); drawSeedLines();}
+
+    const forwardNames=['A','B','O']; const backwardNames=['dx','cx','sx'];
+    function parseInput(raw){const eq=raw.indexOf('='); if(eq<0)return null; const lhs=raw.slice(0,eq).trim(), rhs=raw.slice(eq+1).trim(); let m=/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(lhs),o,g,a,i; if(m){o=+m[1];g=+m[2];a=+m[3];i=+m[4];} else {m=/^(\d+)\.(\d+)\.(\d+)$/.exec(lhs); if(!m)return null; o=+m[1]; g=0; a=+m[2]; i=+m[3];} const v=isNaN(+rhs)?rhs:+rhs; return{ raw:raw, order:o, group:g, alias:a, index:i, value:v } }
+    function applyAdhoc(p){const {order,group,alias,index,value}=p; const b=getOrCreateBox(order); if(!b)return; if(group===0){const k=forwardNames[alias]; if(!k)return; b.forward[alias][k][index]=Number(value)?1:0;} else if(group===1){const k=backwardNames[alias]; if(!k)return; b.backward[alias][k][index]=Number(value)?1:0;} }
+    function refreshDisplay(o){const b=getOrCreateBox(o); if(!b)return; document.getElementById('masterBoolDisplay').textContent=JSON.stringify(b,null,2);}
+    function onInput(){const raw=document.getElementById('updateInput').value; const p=parseInput(raw); const sel=document.getElementById('selectionDisplay'); const dbg=document.getElementById('debugDisplay'); if(!p){sel.textContent=''; dbg.textContent=''; return;} const {order,group,alias,index,value}=p; const aliasName=group===0?forwardNames[alias]:backwardNames[alias]; sel.textContent=`#${order} → ${aliasName}[${index}] = ${value}`; dbg.textContent=`Test Box Entry: Order: ${order}, Group: ${group}, Alias: ${alias} (${aliasName}), Index: ${index}, Value: ${value}`; applyAdhoc(p); evaluateAll(); refreshDisplay(order); drawCanvas(); }
+
+    window.addEventListener('load',()=>{for(let o=0;o<GRID_W*GRID_H;o++) getOrCreateBox(o); evaluateAll(); refreshDisplay(0); drawCanvas(); const el=document.getElementById('updateInput'); el.addEventListener('input', onInput); el.addEventListener('change', onInput);});
+  </script>
+</body>
+</html>

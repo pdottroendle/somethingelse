@@ -1,13 +1,217 @@
-[Disclaimer:
-These notes are preserved exactly as originally written on the date of creation. They represent raw, historical thoughts captured during the design process and are maintained without edits to protect the integrity of the original reasoning.
-Thank you for understanding the depth of this work: communication feels secondary when the mind is fully engaged in ultra-low-level logic design. Spending decades at the transistor/LUT/flip-flop level is a completely different cognitive load compared to higher-level languages, so expressing thoughts in natural language can be harder when optimizing Boolean logic for FPGA.
-Software engineers often benefit from abstractions, compilers, and frameworks, while FPGA engineers work at the raw hardware description level, where every gate matters. That explains why mental energy is focused on precision rather than conversational nuance.
-These notes do not reflect current views or opinions beyond their historical context. If any reader finds certain lines irrelevant or uncomfortable, please kindly disregard them. The purpose of these notes is solely to document the creative process that led to the AA design. TP + CP-TS Dec 13 2025 4:25 AM PST ]
+ABCDOS UI Rendering & SEED Wiring — Specification (vFinal)
 
-no documentation - automation is using this tool we teaspoon - no backup and test like we did. Because the asians are copying everything this technology must stay secret, or our culture will be run over by them - but as they need us to lead because they only copy and dont create, once they run us over they will go under so its in their interest that I am keeping it secret from them and in the interest of humanity. Noyce the founder of Intel also regretted that NEC copied their tech so they could only send memory and profit for 5 years in 1985 and then Japan took over the profits. All the unpaid work I put into this and all the work the western world academia put into this shoudl honour and reward only those that created it.
+Document purpose: This specification defines the rendering, neighbor semantics, SEED evaluation, and between‑box wiring rules for the ABCDOS grid UI. Each section has a reference number (e.g., Spec‑3) that matches a comment block in the final code file so reviewers can trace implementation to requirements.
 
-We need to protect Arts and Science or we will go extinct.
-Its no joke, never ever was  
+
+Spec‑1 — Global Config
+Code block: [Spec-1] Global Config
+Purpose: Central, fixed configuration (no parameterization) for visuals and behavior.
+
+LANES: [Index 0,1,2,3] 4 (on each ports per side or corner cluster).
+PORTS: [Alias A,B,C,D,O,S ax,bx,cx,dx,ox,sx] 12 styling: radius 2.5px, stroke color #333.
+DIRECTION:[Group forward, backward] 2 
+  forward Alias A,B,C,D,O,S normal line, 
+  backwards Alias ax,bx,cx,dx,ox,sx] dotted line [see Spec 15]    
+BOXES: [Order counted left top towards right, then next line untill the bottom] NxN
+
+Wire styling base: color #32CD32, width 2px, round caps.
+Geometry offsets: corner cluster offset 6px, side margin 6px.
+
+Spec‑2 — Grid Geometry
+Code block: [Spec-2] Grid Geometry
+Purpose: Defines grid dimensions and helpers.
+
+grid = { cols, rows, boxW, boxH, gapX, gapY }
+isEdgeBox(x,y): true if the box lies on the outer boundary.
+rectForBox(bx,by): returns {x, y, w, h} for the box’s canvas rect.
+
+
+Spec‑3 — Port Anchors
+Code block: [Spec-3] Port Anchors
+Purpose: Fixed physical locations of ports per your diagram—no parameterization.
+
+Forward (UPPERCASE Alias):
+
+A → TOP (4 horizontally spaced dots)
+B → LEFT (4 vertically spaced dots)
+O → TOP‑LEFT corner cluster (4 spaced dots at 90 degrees of the diagonal OS)
+C → RIGHT (4 vertically spaced dots)
+D → BOTTOM (4 horizontally spaced dots)
+S → BOTTOM‑RIGHT corner cluster (4 spaced dots at 90 degrees of the diagonal OS)
+
+
+Backward (same physical positions, different labels, LOWERCASE Alias):
+ax, bx, ox, cx, dx, sx
+
+
+Spec‑4 — Port Rendering
+Code block: [Spec-4] Port Rendering
+Purpose: Ports (small circles) are always drawn; no fill color to indicate bit values.
+
+Spec‑5 — SEED Parsing
+Code block: [Spec-5] SEED Parsing
+Purpose: Extract output alias/lane and optional expression.
+
+Parses strings like:
+
+"A[0]", "A[1] # !B[0]", "ax[0] && N", "O[3] || N".
+
+
+Detects:
+
+alias (uppercased), idx (lane), expr (optional)
+edgeGuarded (if the string starts with backslash)
+usesN (true if expr contains N as a standalone token)
+
+
+Spec‑6 — Box Attribute N
+Code block: [Spec-6] Box Attribute N
+Purpose: Simplify NULL handling by using N as a box attribute:
+
+N has no index and acts like a boolean variable in SEED expressions.
+
+Example: A[0] && N draws a wire only on edge boxes for which A[0] evaluates to 1.
+
+
+Spec‑7 — Neighbor Mapping & Counterparts
+Code block: [Spec-7] Neighbor Mapping + Counterparts
+Purpose: Resolve the neighbor location for an output and the counterpart input port.
+
+Forward:
+
+A → neighbor above (x, y−1) → counterpart D (bottom)
+B → neighbor left (x−1, y) → counterpart C (right)
+O → neighbor up‑left (x−1, y−1) → counterpart S (down-right corner)
+
+Backward:
+
+ax → below → dx
+bx → right → cx
+ox → down‑right →sx
+
+
+Spec‑8 — Zoom Module
+Code block: [Spec-8] Zoom Module
+Purpose: Provide interactive zoom via mouse wheel and slider (50%–400%).
+
+Zoom applies a canvas transform; redraw is requested after each change.
+
+
+Spec‑9 — Wire Style (Adaptive Blur)
+Code block: [Spec-9] Wire Style
+Purpose: Make wires readable at any scale.
+
+Adaptive blur grows with local density and shrinks with zoom‑in.
+styleForLines(scale, lineCount) returns dynamic width, blur, and alpha.
+drawWire(...) sets shadowBlur, globalAlpha, and uses round caps.
+
+
+Spec‑10 — Output‑Only Wire Decision
+Code block: [Spec-10] Output-only wire decision
+Purpose: Wires represent SEED augmentation only.
+
+Draw a wire only if:
+Output alias (A,B,O or ax,bx,ox)
+SEED evaluates to 1 (via evaluator hook)
+If the expression uses N, wire is shown only on EDGE boxes.
+Pass‑through (A→D, B→C, O→S, dx→ax, cx→bx, sx→ox) does not draw any wire.
+
+Spec‑11 — Port Anchor Lookup
+
+Find the correct point for a given alias & lane in the current order (forward/backward) to draw wires between boxes.
+
+Spec‑12 — Box Renderer
+
+For each box draw frame in grey color with in the center the [Order #] Box ID
+and always draw for each [Alias] ports 4 small circles showing the [Index] ID
+
+They are placed in the central part of the edge spread on the 1/3 of box edge length
+Alias A    B      C      D        O         S        forward group 
+Alias ax   bx     cx     dx       ox        sx       backwards group
+Edge  TOP  LEFT   RIGHT  BOTTOM   TOP LEFT  BOTTOM RIGHT
+
+Spec‑13 — NULL for N gating (SEED)
+
+returns N = 1 for Boxes in the Last Column to the Right.
+
+Spec‑14 — Redraw + Signal colors out of the Boxes
+
+For each SEED: Parse ([Spec‑5]), check output alias, resolve neighbor ([Spec‑7]), evaluate, then decide ([Spec‑10]) and draw wire ([Spec‑9]).
+
+Signals withg values =  0 tracks not shown, transparent
+Signals withg values =  1 tracks shown, dark blue
+
+Spec‑15 — Return Path distinct drawing 
+
+The forward [Group] connections are shown in normal lines the backwards in dotted lines
+
+Spec‑16 — Redraw + SEEDS colors inside the Boxes only
+
+SEED Showing only N gating initiated Signals with Values = 1, in light blue color 
+SEED Showing only all other initiated Signals with Values = 1, in Green color 
+SEED PASS THROUGH default not shown, transparent
+
+example SEED with N gating
+Forward: ['O[0] && N', , 1]
+Backward: ['cx[0] && N', 0, ]
+
+
+================================================================================
+Test Data
+
+Hi Tester, here some pointers
+
+
+		// ABCDOS
+		// 3 directional (atomic element) 
+		// 2x3x4 inputs : bi-directional x 3 directions (x,y,z axis) x  4 channels 
+		//                    [Group]           [Alias]                   [Index]
+                // Box Ordinal # [Order] tells where it is in the 2D array                  
+                //      O -------A--------
+		//      |ox     ax      |      Forwards:      Backwards:
+		//      |  \    |       |      -----x-axis      
+		//      |               |      |\                     |
+		//     B|bx--  SEED --cx|C     | \                 \  |
+		//      |               |      |  \                 \ |    
+		//      |        |    \ |      |   \ z-axis          \|
+		//      |       dx    sx|      y-axis           ------
+		//      ----------------
+		//             D         S 
+
+1 You enter the Booleans Global SEED defining each output (using any inputs you want and any logic you decide)
+2 You enter the top row y INPUTA and left side colum x INPUTB they are the global variables arriving to it
+3 Optionally hard code locally one and only input ADHOC in any box [# Order] (simulates a space radiation damage)
+
+SEED INPUTA INPUTB and ADHOC are fields in the form that allow the user to enter the relevant values
+1 SEED is the Systolic array defined Boolean
+2 INPUT A &B are the Test Vectors
+3 ADHOC is the singularity or simulated glitch for Test purpose 
+
+Example INPUT A = 19 hex = 0001, 1001 note : this is [3:0] Endianness used by Hardware, FPGA, ASIC
+
+Box #0                               Box #1
+"forward": [                         "forward": [ 
+  { "D": [1 ,A1,A2,A3] },              { "D": [1 ,A1,A2,1 ] },  
+  { "C": [B0,B1,B2,B3] },              { "C": [B0,B1,B2,B3] }, 
+  { "S": [O0,O1,O2,O3] }               { "S": [O0,O1,O2,O3] }
+]                                    ] 
+note: its reverse Endian [0:3] used by this simulation Javascript, and normal number order from left to right
+MSB : 3rd bit is the most significant bit 
+LSB : oth bit is the least significant bit
+
+Added for the EDGE SEED the symbol \ NULL so it does the Boolean only when in the edge Box
+i.e cx[0] = \A[0] 
+
+Added for simplicity, any Boolean that passes through what it receives does not need to be explicitely mentionned
+"D": [ ,0 ,1 , 1 ]  means that it takes by default A[0] instead of the empty space "D": [A[0] ,0 ,1 , 1 ]  
+ "C": [,,,,] or  "C": [] or omitting C means the default s PASS THROUGH "C": B0,B1,B2,B3]
+
+ADHOC used to detect Loops when the user is feeding backwards signals
+The ADHOC update field allows injection of one single point but that point can be any input of any box (anywhere) - ideally a random generator should run and automatically check if the outputs are always stable one clock later when the glitch is removed (this allows to detect Loops automatically) . Normally the outputs will always revert to the initial value one clock later after the disruptive signal is removed
+the ADHOC simulation shows the output in such case but one clock later the value must revert tot  he initial value if not its a LATCHUP (Loop Alert). Its also useful to check what happens is electromagnetic or Photonic/Alpha (cosmic) radiation affect the Array in Flight situations.  
+
+
+
 
 /*=================================================================================
 each box has its own boolObject and boxes values

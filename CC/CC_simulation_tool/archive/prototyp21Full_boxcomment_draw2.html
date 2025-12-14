@@ -1,0 +1,292 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ABCDOS Grid — Ports + SEED-only Green Lines</title>
+  <style>
+    body { font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif; margin: 16px; }
+    .row { display: flex; gap: 16px; align-items: flex-start; }
+    .panel { min-width: 320px; }
+    .label { font-weight: 600; margin-bottom: 4px; display: inline-block; }
+    input[type=text] { width: 100%; padding: 6px 8px; box-sizing: border-box; }
+    pre { background: #f7f7f9; padding: 10px; border: 1px solid #ddd; white-space: pre-wrap; min-height: 180px; }
+    .hint { font-size: 12px; color: #555; }
+    .ok { color: #00a362; }
+    canvas { border: 1px solid #ddd; background: #fff; }
+  </style>
+</head>
+<body>
+  <h1>ABCDOS Grid — Ports + SEED-only Green Lines</h1>
+
+  <div class="row">
+    <div class="panel">
+      <label for="updateInput" class="label">Ad-hoc Input (single point)</label>
+      <input id="updateInput" type="text" placeholder="order.alias.index=value (e.g., 0.0.0=1)" />
+      <div class="hint">Short form hits forward inputs (<code>0→A, 1→B, 2→O</code>). Full form also accepted: <code>order.group.alias.index=value</code> (<code>group 0→forward</code>, <code>1→backward</code>: <code>dx,cx,sx</code> inputs / <code>ax,bx,ox</code> outputs).</div>
+      <div id="selectionDisplay" class="ok" style="margin-top:8px; font-weight:bold;"></div>
+      <div id="debugDisplay" class="hint" style="margin-top:4px;"></div>
+    </div>
+    <div class="panel">
+      <span id="masterBoolDisplayLabel" class="label">Display (current box state)</span>
+      <pre id="masterBoolDisplay" aria-labelledby="masterBoolDisplayLabel"></pre>
+    </div>
+  </div>
+
+  <div style="margin-top:16px;" class="panel">
+    <span class="label">Canvas</span>
+    <canvas id="gridCanvas" width="900" height="600"></canvas>
+    <div class="hint">Green lines are drawn <strong>only</strong> when a SEED override exists for that bit <em>and</em> the expression resolves to <code>1</code>. If the override contains <code>NULL</code> or starts with a backslash \ (edge guard), the line appears <em>only</em> on EDGE boxes.</div>
+  </div>
+
+  <script>
+    // ===================== Grid & Boxes =====================
+    const GRID_W = 2; // columns (matches your 2x2 example image)
+    const GRID_H = 2; // rows
+    const CELL_W = 260; // box width in canvas
+    const CELL_H = 200; // box height in canvas
+    const BOX_PAD = 14; // inner padding
+
+    const boxes = []; // boxes[order]
+
+    function newBox() {
+      return {
+        forward: [
+          { A: [0,0,0,0], D: [0,0,0,0] },
+          { B: [0,0,0,0], C: [0,0,0,0] },
+          { O: [0,0,0,0], S: [0,0,0,0] }
+        ],
+        backward: [
+          { dx: [0,0,0,0], ax: [0,0,0,0] },
+          { cx: [0,0,0,0], bx: [0,0,0,0] },
+          { sx: [0,0,0,0], ox: [0,0,0,0] }
+        ]
+      };
+    }
+
+    function getOrCreateBox(order) {
+      if (!Number.isFinite(order) || order < 0) return null;
+      if (!boxes[order]) boxes[order] = newBox();
+      return boxes[order];
+    }
+
+    function isEdge(order) {
+      const x = order % GRID_W;
+      const y = Math.floor(order / GRID_W);
+      return x === 0 || y === 0 || x === GRID_W - 1 || y === GRID_H - 1;
+    }
+
+    function normalizeEdgeInputs(order) {
+      const box = boxes[order];
+      if (!box || !isEdge(order)) return;
+      ['A','B','O'].forEach((k, gi) => { for (let i=0;i<4;i++) box.forward[gi][k][i] ??= 0; });
+      ['dx','cx','sx'].forEach((k, gi) => { for (let i=0;i<4;i++) box.backward[gi][k][i] ??= 0; });
+    }
+
+    // ===================== SEED (Outputs) =====================
+    const MasterboolObject = {
+      forward: [
+        { D: ['A[0]', '', '', '' ] },
+        { C: ['B[0]', '', '', '' ] },
+        { S: ['A[0]&&B[0] || O[0]', '', '', '' ] }
+      ],
+      backward: [
+        { ax: [0,0,0,0] },
+        { bx: [0,0,0,0] },
+        { ox: [0,0,0,0] }
+      ]
+    };
+
+    const DEFAULTS = {
+      D: ['A[0]','A[1]','A[2]','A[3]'],
+      C: ['B[0]','B[1]','B[2]','B[3]'],
+      S: ['O[0]','O[1]','O[2]','O[3]']
+    };
+
+    function normalizeSeed(master) {
+      ['D','C','S'].forEach((name, gi) => {
+        const arr = master.forward[gi][name];
+        if (!arr || !arr.length) master.forward[gi][name] = DEFAULTS[name].slice();
+        else for (let i=0;i<4;i++) if (arr[i] === undefined || arr[i] === '') arr[i] = DEFAULTS[name][i];
+      });
+    }
+
+    // ===================== Expression Evaluation =====================
+    function evaluateExpression(expression, order) {
+      if (typeof expression !== 'string') return (expression ? 1 : 0);
+
+      // Edge guard with leading backslash
+      if (expression.startsWith('\')) {
+        if (!isEdge(order)) return 0; // guard blocks non-edge
+        expression = expression.slice(1);
+      }
+
+      // NULL token → 1 on edge, 0 elsewhere
+      expression = expression.replace(/NULL/g, isEdge(order) ? '1' : '0');
+
+      // Operator mapping kept per your convention
+      expression = expression.replace(/#/g,'^')
+                             .replace(/!/g,'!')
+                             .replace(/&&/g,'&&')
+                             .replace(/\|\|/g,'||');
+
+      // Replace tokens with values from this box
+      expression = expression.replace(/([ABO])\[(\d)\]/g, (_, k, idx) => {
+        const gi = {A:0,B:1,O:2}[k];
+        return (boxes[order].forward[gi][k][+idx] || 0);
+      });
+      expression = expression.replace(/(ax|bx|ox|dx|cx|sx)\[(\d)\]/g, (_, k, idx) => {
+        const isOut = (k==='ax'||k==='bx'||k==='ox');
+        const gi = {dx:0,cx:1,sx:2, ax:0, bx:1, ox:2}[k];
+        const layer = isOut ? boxes[order].backward[gi][k] : boxes[order].backward[gi][k];
+        return (layer[+idx] || 0);
+      });
+
+      try { return new Function(`return (${expression}) ? 1 : 0;`)(); }
+      catch { return 0; }
+    }
+
+    // ===================== Box Evaluation =====================
+    function evaluateBox(order) {
+      const box = getOrCreateBox(order);
+      normalizeEdgeInputs(order);
+      normalizeSeed(MasterboolObject);
+
+      // Pass-through first
+      for (let i=0;i<4;i++) {
+        box.forward[0].D[i] = box.forward[0].A[i];
+        box.forward[1].C[i] = box.forward[1].B[i];
+        box.forward[2].S[i] = box.forward[2].O[i];
+      }
+      // Apply SEED overrides
+      const outs = [ {name:'D',gi:0}, {name:'C',gi:1}, {name:'S',gi:2} ];
+      for (const {name,gi} of outs) {
+        const exprArr = MasterboolObject.forward[gi][name];
+        for (let i=0;i<4;i++) {
+          const expr = exprArr[i];
+          if (expr !== undefined && expr !== '') {
+            const v = evaluateExpression(expr, order);
+            box.forward[gi][name][i] = v ? 1 : 0;
+          }
+        }
+      }
+    }
+
+    function evaluateAll() {
+      for (let order=0; order<GRID_W*GRID_H; order++) { getOrCreateBox(order); evaluateBox(order); }
+    }
+
+    // ===================== Canvas Drawing (ABCDOS layout) =====================
+    const canvas = document.getElementById('gridCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function boxRect(order) {
+      const x = (order % GRID_W) * CELL_W + 20;
+      const y = Math.floor(order / GRID_W) * CELL_H + 20;
+      return { x, y, w: CELL_W-40, h: CELL_H-40 };
+    }
+
+    function drawCircle(x,y,r) {
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+      ctx.fillStyle = '#fff'; // always visible, no value-dependent fill
+      ctx.strokeStyle = '#444'; ctx.lineWidth = 1;
+      ctx.fill(); ctx.stroke();
+    }
+
+    // ABCDOS positioning — as per your spec
+    // Forward inputs: A (TOP), B (LEFT), O (TOP-LEFT corner)
+    // Forward outputs: C (RIGHT), D (BOTTOM), S (BOTTOM-RIGHT corner)
+    // Backward inputs: dx (BOTTOM), cx (RIGHT), sx (BOTTOM-RIGHT corner)
+    // Backward outputs: ax (TOP), bx (LEFT), ox (TOP-LEFT corner)
+    function portXY(order, alias, idx) {
+      const {x,y,w,h} = boxRect(order);
+      const stepH = 28, stepV = 28, cornerStep = 12;
+      switch(alias) {
+        // Forward inputs
+        case 'A': return { x: x + BOX_PAD + idx*stepH, y: y + BOX_PAD };                         // TOP
+        case 'B': return { x: x + BOX_PAD,               y: y + BOX_PAD + idx*stepV };            // LEFT
+        case 'O': return { x: x + BOX_PAD + idx*cornerStep, y: y + BOX_PAD + idx*cornerStep };    // TOP-LEFT corner cluster
+        // Forward outputs
+        case 'C': return { x: x + w - BOX_PAD,           y: y + BOX_PAD + idx*stepV };            // RIGHT
+        case 'D': return { x: x + BOX_PAD + idx*stepH,   y: y + h - BOX_PAD };                    // BOTTOM
+        case 'S': return { x: x + w - BOX_PAD - idx*cornerStep, y: y + h - BOX_PAD - idx*cornerStep }; // BOTTOM-RIGHT corner cluster
+        // Backward inputs
+        case 'dx': return { x: x + BOX_PAD + idx*stepH,  y: y + h - BOX_PAD };                    // BOTTOM
+        case 'cx': return { x: x + w - BOX_PAD,          y: y + BOX_PAD + idx*stepV };            // RIGHT
+        case 'sx': return { x: x + w - BOX_PAD - idx*cornerStep, y: y + h - BOX_PAD - idx*cornerStep }; // BOTTOM-RIGHT corner cluster
+        // Backward outputs
+        case 'ax': return { x: x + BOX_PAD + idx*stepH,  y: y + BOX_PAD };                        // TOP
+        case 'bx': return { x: x + BOX_PAD,              y: y + BOX_PAD + idx*stepV };            // LEFT
+        case 'ox': return { x: x + BOX_PAD + idx*cornerStep, y: y + BOX_PAD + idx*cornerStep };    // TOP-LEFT corner cluster
+      }
+      return { x: x + w/2, y: y + h/2 };
+    }
+
+    function drawBoxesAndPorts() {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.font = '12px system-ui';
+      for (let order=0; order<GRID_W*GRID_H; order++) {
+        const {x,y,w,h} = boxRect(order);
+        // box outline
+        ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5; ctx.strokeRect(x,y,w,h);
+        // title
+        ctx.fillStyle = '#555'; ctx.fillText(`Box ${order}${isEdge(order)?' (EDGE)':''}`, x+6, y-6);
+        // draw 4 small circles per alias, always visible
+        const groups = [
+          ['A','B','O','C','D','S'],
+          ['dx','cx','sx','ax','bx','ox']
+        ];
+        for (const aliases of groups) {
+          for (const a of aliases) {
+            for (let i=0;i<4;i++) { const p = portXY(order, a, i); drawCircle(p.x, p.y, 4); }
+          }
+        }
+      }
+    }
+
+    // Parse references (A[0], B[1], O[2], dx[0], etc.) from a SEED expression
+    function refsFromExpr(expr) {
+      if (typeof expr !== 'string') return [];
+      const list = [];
+      const rx = /\?([ABO]|dx|cx|sx|ax|bx|ox)\[(\d)\]/g; let m;
+      while ((m = rx.exec(expr)) !== null) { list.push({ alias: m[1], idx: +m[2] }); }
+      return list;
+    }
+
+    // Draw green lines for SEED overrides only when expression evaluates to 1
+    function drawSeedLines() {
+      ctx.lineWidth = 1.6; ctx.strokeStyle = '#00c853';
+      const outs = [ {name:'D', gi:0}, {name:'C', gi:1}, {name:'S', gi:2} ];
+      for (let order=0; order<GRID_W*GRID_H; order++) {
+        for (const {name,gi} of outs) {
+          const exprArr = MasterboolObject.forward[gi][name];
+          for (let i=0;i<4;i++) {
+            const expr = exprArr[i];
+            if (expr === undefined || expr === '') continue; // only SEED-specified bits
+            const value = evaluateExpression(expr, order);
+            if (value !== 1) continue; // draw only if resolves to 1
+            const refs = refsFromExpr(expr);
+            const to = portXY(order, name, i);
+            for (const r of refs) {
+              const from = portXY(order, r.alias, r.idx);
+              ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+            }
+          }
+        }
+      }
+    }
+
+    function drawCanvas() { drawBoxesAndPorts(); drawSeedLines(); }
+
+    // ===================== Input UI =====================
+    const forwardNames=['A','B','O']; const backwardNames=['dx','cx','sx'];
+    function parseInput(raw){const eq=raw.indexOf('='); if(eq<0)return null; const lhs=raw.slice(0,eq).trim(), rhs=raw.slice(eq+1).trim(); let m=/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(lhs),o,g,a,i; if(m){o=+m[1];g=+m[2];a=+m[3];i=+m[4];} else {m=/^(\d+)\.(\d+)\.(\d+)$/.exec(lhs); if(!m)return null; o=+m[1]; g=0; a=+m[2]; i=+m[3];} const v=isNaN(+rhs)?rhs:+rhs; return{ raw:raw, order:o, group:g, alias:a, index:i, value:v } }
+    function applyAdhoc(p){const {order,group,alias,index,value}=p; const b=getOrCreateBox(order); if(!b)return; if(group===0){const k=forwardNames[alias]; if(!k)return; b.forward[alias][k][index]=Number(value)?1:0;} else if(group===1){const k=backwardNames[alias]; if(!k)return; b.backward[alias][k][index]=Number(value)?1:0;} }
+    function refreshDisplay(o){const b=getOrCreateBox(o); if(!b)return; document.getElementById('masterBoolDisplay').textContent=JSON.stringify(b,null,2);}    
+    function onInput(){const raw=document.getElementById('updateInput').value; const p=parseInput(raw); const sel=document.getElementById('selectionDisplay'); const dbg=document.getElementById('debugDisplay'); if(!p){sel.textContent=''; dbg.textContent=''; return;} const {order,group,alias,index,value}=p; const aliasName=group===0?forwardNames[alias]:backwardNames[alias]; sel.textContent=`#${order} → ${aliasName}[${index}] = ${value}`; dbg.textContent=`Test Box Entry: Order: ${order}, Group: ${group}, Alias: ${alias} (${aliasName}), Index: ${index}, Value: ${value}`; applyAdhoc(p); evaluateAll(); refreshDisplay(order); drawCanvas(); }
+
+    window.addEventListener('load',()=>{for(let o=0;o<GRID_W*GRID_H;o++) getOrCreateBox(o); evaluateAll(); refreshDisplay(0); drawCanvas(); const el=document.getElementById('updateInput'); el.addEventListener('input', onInput); el.addEventListener('change', onInput);});
+  </script>
+</body>
+</html>

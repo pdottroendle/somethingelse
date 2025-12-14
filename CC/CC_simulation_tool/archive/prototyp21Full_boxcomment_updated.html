@@ -1,0 +1,305 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dynamic Input Processing and Evaluation System — Box Test (Amendments 1–2)</title>
+  <style>
+    body { font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif; margin: 16px; }
+    .row { display: flex; gap: 16px; align-items: flex-start; }
+    .panel { min-width: 300px; }
+    .label { font-weight: 600; margin-bottom: 4px; display: inline-block; }
+    input[type=text], textarea { width: 100%; padding: 6px 8px; box-sizing: border-box; }
+    textarea { min-height: 140px; }
+    pre { background: #f7f7f9; padding: 10px; border: 1px solid #ddd; white-space: pre-wrap; }
+    .hint { font-size: 12px; color: #555; }
+    .ok { color: #00a362; }
+    .warn { color: #c62828; }
+  </style>
+</head>
+<body>
+  <h1>Dynamic Input Processing & Evaluation — Test Rig</h1>
+
+  <div class="row">
+    <div class="panel">
+      <label for="updateInput" class="label">Ad-hoc Input (single point)</label>
+      <input id="updateInput" type="text" placeholder="order.alias.index=value  (e.g., 0.0.0=1)" />
+      <div class="hint">Short form targets forward inputs: <code>alias 0→A, 1→B, 2→O</code>. Full form also accepted: <code>order.group.alias.index=value</code> where <code>group 0→forward</code>, <code>1→backward</code> (dx,cx,sx). Only one bit per update.</div>
+      <div id="selectionDisplay" class="ok" style="margin-top:8px; font-weight:bold;"></div>
+      <div id="debugDisplay" class="hint" style="margin-top:4px;"></div>
+    </div>
+
+    <div class="panel">
+      <span id="masterBoolDisplayLabel" class="label">Display (current box state)</span>
+      <pre id="masterBoolDisplay" aria-labelledby="masterBoolDisplayLabel"></pre>
+    </div>
+  </div>
+
+  <hr />
+
+  <div class="hint">Modes: default pass-through (A→D, B→C, O→S). SEED can override any output bit. Edge rule: expressions starting with <code>\</code> (e.g., <code>\A[0]</code>) apply only on edge boxes. On edges, unspecified inputs resolve to <strong>0</strong> by default to avoid undefined; elsewhere pass-through remains.</div>
+
+  <script>
+    // ===================== Grid & Boxes =====================
+    const GRID_W = 4; // adjust to your actual grid width
+    const GRID_H = 2; // adjust to your actual grid height
+
+    const boxes = []; // boxes[order]
+
+    function newBox() {
+      return {
+        forward: [
+          { A: [0,0,0,0], D: [0,0,0,0] },
+          { B: [0,0,0,0], C: [0,0,0,0] },
+          { O: [0,0,0,0], S: [0,0,0,0] }
+        ],
+        backward: [
+          { dx: [0,0,0,0], ax: [0,0,0,0] },
+          { cx: [0,0,0,0], bx: [0,0,0,0] },
+          { sx: [0,0,0,0], ox: [0,0,0,0] }
+        ]
+      };
+    }
+
+    function getOrCreateBox(order) {
+      if (!Number.isFinite(order) || order < 0) return null;
+      if (!boxes[order]) boxes[order] = newBox();
+      return boxes[order];
+    }
+
+    function isEdge(order) {
+      const x = order % GRID_W;
+      const y = Math.floor(order / GRID_W);
+      return x === 0 || y === 0 || x === GRID_H - 1 || y === GRID_W - 1;
+    }
+
+    // On edges, any unspecified incoming inputs resolve to 0 (defensive):
+    function normalizeEdgeInputs(order) {
+      const box = boxes[order];
+      if (!box) return;
+      if (!isEdge(order)) return;
+      // Forward inputs A,B,O
+      ['A','B','O'].forEach((k, gi) => {
+        for (let i=0;i<4;i++) {
+          const v = box.forward[gi][k][i];
+          box.forward[gi][k][i] = (v === undefined || v === null) ? 0 : v;
+        }
+      });
+      // Backward inputs dx,cx,sx
+      ['dx','cx','sx'].forEach((k, gi) => {
+        for (let i=0;i<4;i++) {
+          const v = box.backward[gi][k][i];
+          box.backward[gi][k][i] = (v === undefined || v === null) ? 0 : v;
+        }
+      });
+    }
+
+    // ===================== SEED (Outputs) =====================
+    // Keep your conventions exactly; testers can edit this object live if needed.
+    const MasterboolObject = {
+      forward: [
+        { D: ['A[0]', 0, 0, 0] },
+        { C: ['B[0]', 0, 0, 0] },
+        { S: ['A[0]&&B[0] || O[0]', 0, 0, 0] }
+      ],
+      backward: [
+        { ax: [0,0,0,0] },
+        { bx: [0,0,0,0] },
+        { ox: [0,0,0,0] }
+      ]
+    };
+
+    // Defaults for shorthand when elements are omitted
+    const DEFAULTS = {
+      D: ['A[0]', 'A[1]', 'A[2]', 'A[3]'],
+      C: ['B[0]', 'B[1]', 'B[2]', 'B[3]'],
+      S: ['O[0]', 'O[1]', 'O[2]', 'O[3]']
+    };
+
+    function normalizeSeed(master) {
+      ['D','C','S'].forEach((name, gi) => {
+        const arr = master.forward[gi][name];
+        if (!arr || !arr.length) {
+          master.forward[gi][name] = DEFAULTS[name].slice();
+        } else {
+          for (let i = 0; i < 4; i++) {
+            if (arr[i] === undefined || arr[i] === '') {
+              arr[i] = DEFAULTS[name][i];
+            }
+          }
+        }
+      });
+    }
+
+    // ===================== Expression Evaluation =====================
+    // You already map operators; we keep that logic minimal and intact.
+    function evaluateExpression(expression, order, boxes) {
+      if (typeof expression !== 'string') return (expression ? 1 : 0);
+
+      // Resolve edge-guarded tokens (\A[0], \B[1], etc.) early:
+      if (expression.startsWith('\\')) {
+        if (!isEdge(order)) return 0; // on non-edge, guarded expr resolves to 0 (skip override)
+        expression = expression.slice(1);
+      }
+
+      // Replace boolean operators with JS equivalents (keeping your conventions)
+      expression = expression.replace(/#/g, '^');   // XOR
+      expression = expression.replace(/!/g, '!');   // NOT
+      expression = expression.replace(/&&/g, '&&'); // AND (ensure decoded)
+      expression = expression.replace(/\|\|/g, '||'); // OR
+
+      // Replace input tokens with numeric values from this box
+      // A[i], B[i], O[i], ax[i], bx[i], ox[i]
+      expression = expression.replace(/([ABO])\[(\d)\]/g, (_, k, idx) => {
+        const gi = {A:0, B:1, O:2}[k];
+        return (boxes[order].forward[gi][k][Number(idx)] || 0);
+      });
+      expression = expression.replace(/(ax|bx|ox)\[(\d)\]/g, (_, k, idx) => {
+        const gi = {ax:0, bx:1, ox:2}[k];
+        return (boxes[order].backward[gi][k][Number(idx)] || 0);
+      });
+
+      // Now safely evaluate bitwise boolean (XOR with ^, AND &&, OR ||)
+      try {
+        // eslint-disable-next-line no-new-func
+        const fn = new Function(`return (${expression}) ? 1 : 0;`);
+        return fn();
+      } catch (e) {
+        console.warn('Expression error:', expression, e);
+        return 0; // fail-safe
+      }
+    }
+
+    function evalSeed(expr, order, boxes) {
+      if (expr == null || expr === '') return undefined; // no override → keep pass-through
+      return evaluateExpression(expr, order, boxes);
+    }
+
+    // ===================== Box Evaluation =====================
+    function evaluateBox(order) {
+      const box = getOrCreateBox(order);
+      if (!box) return;
+
+      // Edge safety: ensure unspecified incoming resolve to 0
+      normalizeEdgeInputs(order);
+
+      // 1) Normalize SEED (fill pass-through defaults where omitted)
+      normalizeSeed(MasterboolObject);
+
+      // 2) Default pass-through (A→D, B→C, O→S)
+      for (let i = 0; i < 4; i++) {
+        box.forward[0].D[i] = box.forward[0].A[i];
+        box.forward[1].C[i] = box.forward[1].B[i];
+        box.forward[2].S[i] = box.forward[2].O[i];
+      }
+
+      // 3) Apply SEED overrides (per bit; edge-guard handled in evaluateExpression)
+      const map = [ { name:'D', gi:0 }, { name:'C', gi:1 }, { name:'S', gi:2 } ];
+      for (const {name, gi} of map) {
+        const exprArr = MasterboolObject.forward[gi][name];
+        for (let i = 0; i < 4; i++) {
+          const val = evalSeed(exprArr[i], order, boxes);
+          if (val !== undefined) {
+            box.forward[gi][name][i] = val ? 1 : 0;
+          }
+        }
+      }
+    }
+
+    function evaluateAll() {
+      for (let order = 0; order < GRID_W * GRID_H; order++) {
+        getOrCreateBox(order);
+        evaluateBox(order);
+      }
+    }
+
+    // ===================== UI Wiring (Ad-hoc single point) =====================
+    const forwardNames = ['A','B','O'];
+    const backwardNames = ['dx','cx','sx'];
+
+    function parseInput(raw) {
+      const eq = raw.indexOf('=');
+      if (eq < 0) return null;
+      const lhs = raw.slice(0, eq).trim();
+      const rhs = raw.slice(eq + 1).trim();
+
+      // Try full: order.group.alias.index
+      let m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(lhs);
+      let order, group, alias, index;
+      if (m) {
+        order = +m[1]; group = +m[2]; alias = +m[3]; index = +m[4];
+      } else {
+        // Short: order.alias.index (assume forward)
+        m = /^(\d+)\.(\d+)\.(\d+)$/.exec(lhs);
+        if (!m) return null;
+        order = +m[1]; group = 0; alias = +m[2]; index = +m[3];
+      }
+
+      // Value: permit 0/1 literals (simple testing)
+      const value = isNaN(+rhs) ? rhs : +rhs;
+      return { raw, order, group, alias, index, value };
+    }
+
+    function applyAdhoc(parsed) {
+      const { order, group, alias, index, value } = parsed;
+      const box = getOrCreateBox(order);
+      if (!box) return;
+
+      if (group === 0) {
+        const key = forwardNames[alias];
+        if (!key) return;
+        if (!Array.isArray(box.forward[alias][key])) return;
+        if (index < 0 || index >= 4) return;
+        box.forward[alias][key][index] = Number(value) ? 1 : 0;
+      } else if (group === 1) {
+        const key = backwardNames[alias];
+        if (!key) return;
+        if (!Array.isArray(box.backward[alias][key])) return;
+        if (index < 0 || index >= 4) return;
+        box.backward[alias][key][index] = Number(value) ? 1 : 0;
+      }
+    }
+
+    function refreshDisplay(order) {
+      const box = getOrCreateBox(order);
+      if (!box) return;
+      document.getElementById('masterBoolDisplay').textContent = JSON.stringify(box, null, 2);
+    }
+
+    function onInput() {
+      const raw = document.getElementById('updateInput').value;
+      const parsed = parseInput(raw);
+      const selDiv = document.getElementById('selectionDisplay');
+      const dbgDiv = document.getElementById('debugDisplay');
+
+      if (!parsed) {
+        selDiv.textContent = '';
+        dbgDiv.textContent = '';
+        return;
+      }
+
+      const { order, group, alias, index, value } = parsed;
+      const aliasName = group === 0 ? forwardNames[alias] : backwardNames[alias];
+      selDiv.textContent = `#${order} → ${aliasName}[${index}] = ${value}`;
+      dbgDiv.textContent = `Test Box Entry: Order: ${order}, Group: ${group}, Alias: ${alias} (${aliasName}), Index: ${index}, Value: ${value}`;
+
+      applyAdhoc(parsed);         // single-point injection (any box, any input)
+      evaluateAll();              // recompute with pass-through + SEED overrides
+      refreshDisplay(order);      // show current box state
+    }
+
+    // Initialize grid and UI
+    window.addEventListener('load', () => {
+      // Precreate the grid
+      for (let order = 0; order < GRID_W * GRID_H; order++) getOrCreateBox(order);
+      evaluateAll();
+      refreshDisplay(0);
+
+      const inputEl = document.getElementById('updateInput');
+      inputEl.addEventListener('input', onInput);
+      inputEl.addEventListener('change', onInput);
+    });
+  </script>
+</body>
+</html>

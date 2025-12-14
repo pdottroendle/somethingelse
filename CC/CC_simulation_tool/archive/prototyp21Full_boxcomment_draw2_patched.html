@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <title>ABCDOS Grid — Ports + SEED-only Green Lines (patched)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 20px; }
+    pre { background: #f6f8fa; padding: 12px; border-radius: 8px; overflow:auto; }
+    .note { color:#555; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <pre>
+# ABCDOS Grid — Ports \+ SEED\-only Green Lines
+## ABCDOS Grid — Ports \+ SEED\-only Green Lines
+```
+0→A, 1→B, 2→O```
+```
+order.group.alias.index=value```
+```
+group 0→forward```
+```
+1→backward```
+```
+dx,cx,sx```
+```
+ax,bx,ox``` 
+Ad\-hoc Input \(single point\) 
+Short form hits forward inputs \(\). Full form also accepted: \(, : inputs / outputs\).
+Display \(current box state\) 
+```
+1```
+```
+NULL``` 
+Canvas 
+Green lines are drawn only when a SEED override exists for that bit and the expression resolves to . If the override contains or starts with a backslash \\ \(edge guard\), the line appears only on EDGE boxes.
+</pre>
+  <div class='note'>Patched: neighborXY mapper and inter-box wire rendering are available on <code>window.*</code>. Edge-guard uses backslash (\) only, and NULL is left unmodified (lines are drawn only if the bit evaluates truthy; explicit NULL or undefined skips drawing).</div>
+
+  <script>
+  // =========================
+  // Config (backslash-only edge guard; NULL left as-is)
+  // =========================
+  const Config = {
+    EDGE_GUARD_PREFIXES: ['\'], // backslash only per request
+    ALIAS_DELTAS: {
+      forward:  { A: [-1, 0], B: [ 1, 0], O: [ 0, 1] },
+      backward: { A: [ 1, 0], B: [-1, 0], O: [ 0,-1] },
+    },
+    LINE_STYLE: { color: '#32CD32', width: 2, cap: 'round' }
+  };
+
+  /** Edge check */
+  function isEdgeBox(x, y, width, height) {
+    return x === 0 || y === 0 || x === (width - 1) || y === (height - 1);
+  }
+
+  /** Parse tokens like "\\A[0]" or "A[0]" (edge-guard optional, backslash only). */
+  function parseAliasToken(token) {
+    if (!token || typeof token !== 'string') return null;
+    let edgeGuarded = false;
+    let raw = token.trim();
+
+    for (const p of Config.EDGE_GUARD_PREFIXES) {
+      if (raw.startsWith(p)) { edgeGuarded = true; raw = raw.slice(p.length); break; }
+    }
+
+    const m = raw.match(/^([A-Za-z])\[(\d+)\]$/);
+    if (!m) return null;
+    return { alias: m[1].toUpperCase(), idx: parseInt(m[2], 10), edgeGuarded };
+  }
+
+  /** Neighbor XY given order & alias */
+  function neighborXY(order, alias, idx, x, y) {
+    const table = Config.ALIAS_DELTAS[order];
+    if (!table || !(alias in table)) return null;
+    const [dx, dy] = table[alias];
+    return { nx: x + dx, ny: y + dy };
+  }
+
+  /** Anchor point per alias inside a box rect */
+  function anchorPointForAlias(rect, alias, idx) {
+    const pad = 6;
+    const lanes = 8; // adjust to your bit-width
+    const laneGap = (rect.h - 2*pad) / Math.max(lanes, 1);
+    const yLane = rect.y + pad + (idx % lanes) * laneGap;
+    switch (alias) {
+      case 'A': return { x: rect.x + pad,         y: yLane };
+      case 'B': return { x: rect.x + rect.w - pad, y: yLane };
+      case 'O': return { x: rect.x + rect.w / 2,   y: rect.y + rect.h - pad };
+      default:  return { x: rect.x + rect.w / 2,   y: rect.y + rect.h / 2 };
+    }
+  }
+
+  /** Draw green line */
+  function drawGreenLine(ctx, p1, p2) {
+    ctx.save();
+    ctx.strokeStyle = Config.LINE_STYLE.color;
+    ctx.lineWidth   = Config.LINE_STYLE.width;
+    ctx.lineCap     = Config.LINE_STYLE.cap;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Render inter-box wires for neighbor-referencing SEED tokens */
+  function renderSeedWiresBetweenBoxes(ctx, gridSize, boxRect, order, x, y, seedOverrideTokens, getBitValue, rectForBox) {
+    const isEdge = isEdgeBox(x, y, gridSize.cols, gridSize.rows);
+    for (const t of (seedOverrideTokens || [])) {
+      const parsed = parseAliasToken(t);
+      if (!parsed) continue;
+
+      // Respect edge-guard: only draw on edge boxes
+      if (parsed.edgeGuarded && !isEdge) continue;
+
+      const nbr = neighborXY(order, parsed.alias, parsed.idx, x, y);
+      if (!nbr) continue;
+      if (nbr.nx < 0 || nbr.ny < 0 || nbr.nx >= gridSize.cols || nbr.ny >= gridSize.rows) continue;
+
+      const raw = getBitValue(parsed.alias, parsed.idx, x, y);
+      // Leave NULL as-is: if raw is null/undefined/'NULL', skip drawing; otherwise draw if truthy
+      if (raw === null || raw === undefined) continue;
+      if (typeof raw === 'string' && raw.toUpperCase() === 'NULL') continue;
+      if (!raw) continue; // only draw on truthy
+
+      const p1 = anchorPointForAlias(boxRect, parsed.alias, parsed.idx);
+      const nbrRect = rectForBox(nbr.nx, nbr.ny);
+      if (!nbrRect) continue;
+
+      const counterpart = (parsed.alias === 'A') ? 'B'
+                        : (parsed.alias === 'B') ? 'A'
+                        : (parsed.alias === 'O') ? 'O'
+                        : parsed.alias;
+
+      const p2 = anchorPointForAlias(nbrRect, counterpart, parsed.idx);
+      drawGreenLine(ctx, p1, p2);
+    }
+  }
+
+  // Expose to global for integration
+  window.ABCDOSNeighbor = {
+    neighborXY,
+    parseAliasToken,
+    renderSeedWiresBetweenBoxes,
+    isEdgeBox,
+    anchorPointForAlias,
+    drawGreenLine,
+    Config
+  };
+  </script>
+</body>
+</html>

@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"/>
+<title>ABCDOS Grid — Final SEED Wiring (Spec‑linked)</title>
+<style>
+    :root { --green:#32CD32; --port:#333; --grid:#aaa; }
+    body { font-family: system-ui, sans-serif; margin: 20px; }
+    pre { background:#f6f8fa; padding:12px; border-radius:8px; }
+    canvas { border:1px dashed var(--grid); }
+    .toolbar { margin:10px 0; display:flex; gap:12px; align-items:center; }
+    .toolbar input[type=range]{ width:240px; }
+  
+
+#stage { position: relative; width: 1200px; height: 900px; }
+#stage > * { position: absolute; left: 0; top: 0; }
+#topRightImage { left: 0; top: 0; width: 450px; height: auto; z-index:1000; }
+#gridCanvas { left: 0; top: 0; }
+#canvas { left: 0; top: 0; }
+.toolbar { position: relative; }
+</style>
+</head><body><pre>ABCDOS Grid — Final integrated build with Spec references in code comments.</pre><div class="toolbar">
+<label>Zoom: <input id="zoomSlider" max="400" min="50" type="range" value="100"/></label>
+<span id="zoomLabel">100%</span>
+</div><canvas height="600" id="gridCanvas" width="900"></canvas><div id="stage"><img alt="scale map" id="topRightImage" src="Scale.jpg"/><canvas height="600" id="gridCanvas" width="900"></canvas><canvas height="800" id="canvas" width="800"></canvas></div><input id="inputA" placeholder="Enter hex string A" type="text"/><input id="inputB" placeholder="Enter hex string B" type="text"/><textarea cols="35" id="userInput" oninput="updateMasterBool()" rows="17"></textarea><input id="updateInput" placeholder="0.0.1=3" type="text"/><div id="selectionDisplay0" style="margin-top:8px;"></div><div id="selectionDisplay" style="margin-top:8px;"></div><pre id="jsonOutput"></pre><pre aria-labelledby="masterBoolDisplayLabel" id="masterBoolDisplay"></pre><span id="masterBoolDisplayLabel">Display:</span><script> 
+// WARNING: Equations with loops are prohibited, as the simulation 
+// only does 2 runs top left to bottom right for ABO and then the opposite dxcxsx
+// the code needs to leave the booleans unresolved if a return data is expected
+// example box0,0 A[0] = B[0] && sx [0]<< this is only available ont he return run
+// WARNING: edge boxes need have NULL NEEDS TO BE INTEGRATED - TBD //
+ 		/* Systolic Arrays - Application for anyone Booleans to be experimented
+		// this tool is free for the public - anyones booleans is theirs
+		// For science and humanity
+		// Peter-Paul Troendle
+		// Made in 
+		//
+                //		USA, WA 2025 
+		//      Digital Xlyns Inc. 
+		//      All Rights Reserved
+		//
+		//Files: Prototyp.html README.txt fubctional.js graphical.js
+		//==================================================
+		// ABCOS 8x8 (or any scale)
+		//              O _______ A_______
+		//               |E|E|E|E|E|E|E|E|\  
+		//               |E|E|E|E|E|E|E|E|\  
+		//               |E|E|E|E|E|E|E|E|\  
+		//            B  |E|E|E|E|E|E|E|E|\  C
+		//               |E|E|E|E|E|E|E|E|\  
+		//               |E|E|E|E|E|E|E|E|\  
+		//               |E|E|E|E|E|E|E|E|\  
+		//               |E|E|E|E|E|E|E|E|\  
+		//                ---------------- S
+		//                  \ \ \ \ \ \ \ \
+		//                    \ \ \ \ \ \ \ 
+		//                      \ \ \ \ \ \
+		//                        \ \ \ \ \ C extended
+		//               (using S)  \ \ \ \ 
+		//                            \ \ \
+		//                              \ \
+		//                                \
+		// D output extends C : output[0] = C in full 
+		//
+		// ABCDOS
+		// E 3 directional (atomic element) 
+		// 2x3x4 inputs : bi-directional x 4 channels x 3 directions 
+		//      O -------A--------
+		//      |ox     ax      |      Forwards:      Backwards:
+		//      |  \    |       |      -----x-axis      
+		//      |               |      |\                     |
+		//     B|bx--       --cx|C     | \                 \  |
+		//      |               |      |  \                 \ |    
+		//      |        |    \ |      |   \ z-axis          \|
+		//      |       dx    sx|      y-axis           ------
+		//      ----------------
+		//             D         S (ox)
+		// x is return path
+		// a[0] is the memory bit (that scales)
+		// b[0] is the code bit (that scales) 
+		// each code bits runs in parallel to the other codes
+		// each memory bit is in parallel to all the others 
+		// all code access to all memory in one single cycle
+		
+		//===================================================
+		// BOOLEANS used to creatre outputs 
+		// eval(equationZ.replace(/x/g, x).replace(/y/g, y).replace(/z/g, z)));
+		//===================================================
+		// BOX DATA and CODE structure
+		// 1 I need in Javascript a input field providing an update value for a json object
+        // 2 the updated json object should be displayed on the output fiield of the html page
+        // 3 this is the json object initially {{{,,,}{,,,}{,,,}}{{,,,}{,,,}{,,,}}}
+        // 4 map the json object to their alias values and initialise with 0 all elements:
+             {{{A[0]:0,A[1]:0,A[2]:0,A[3]:0}{B[0]:0,B[1]:0,B[2]:0,B[3]:0}{O[0]:0,O[1]:0,O[2]:0,O[3]:0}}{{dx[0]:0,dx[1]:0,dx[2]:0,dx[3]:0}{cx[0]:0,cx[1]:0,cx[2]:0,cx[3]:0}{sx[0]:0,sx[1]:0,sx[2]:0,sx[3]:0}}} 
+        // 5 as example 1.1.2 =1 would yield {{,{,1}}} as example so B[1] would have the value 1, please check this as it will show you understood
+		//===================================================
+        */
+//document.addEventListener('DOMContentLoaded', () => {});
+    function formatJSON(json) {
+        return JSON.stringify(json, null, 2)
+            .replace(/\[\s+/g, '[')
+            .replace(/\s+\]/g, ']')
+            .replace(/\s*,\s*/g, ',')
+            .replace(/,\n\s+/g, ',\n')
+            .replace(/],/g, '],\n');
+    }
+
+let boxes = [];
+
+let A, B, O;
+let d = [0, 0, 0, 0];
+let c = [0, 0, 0, 0];
+let s = [0, 0, 0, 0];
+
+let inputAx = '';
+let inputBy = '';
+let xscale = 0;
+let yscale = 0;
+
+document.getElementById('inputA').addEventListener('input', updateBoxes);
+document.getElementById('inputB').addEventListener('input', updateBoxes);
+document.getElementById('userInput').addEventListener('input', updateMasterBool);
+document.getElementById('updateInput').addEventListener('input', updateBox);
+
+    let masterBoolObject = '{"forward":[{"A":["A[0]",0,0,0]},{"B":["B[0]",0,0,"A[1] # B[1]"]},{"O":["A[0] && B[1]",0,"A[2] && !O[0]",0]}],"backward":[{"dx":[0,0,0,0]},{"cx":[0,0,0,0]},{"sx":[0,0,0,0]}]}'
+
+    function updateMasterBool() {
+        const jsonInput = document.getElementById('userInput').value;
+            masterBoolObject = jsonInput; 
+            console.log('MasterboolObject updated:', masterBoolObject);
+            displayMasterBoolObject();
+    }
+	
+    function displayMasterBoolObject() {
+        const masterBoolDisplay = document.getElementById('masterBoolDisplay');
+        masterBoolDisplay.textContent = formatJSON(JSON.parse(masterBoolObject));
+        document.getElementById('userInput').value = masterBoolObject;
+		updateBoxes()
+    }
+	
+// Convert the object to a JSON string
+const masterBoolObjectString = JSON.stringify(masterBoolObject);
+	
+    function updateBoxes() {
+ 
+    console.log('Boxes before update:', boxes.length); // Should be 0
+
+     inputAx = document.getElementById('inputA').value;
+     inputBy = document.getElementById('inputB').value;
+
+    // Update xscale and yscale based on the current values of inputAx and inputBy
+     xscale = inputAx.length;
+     yscale = inputBy.length;
+
+       boxes = []; 
+
+		// line 0 element i=0...N from inputA populates, the.. untill j=N line
+        // left right (i:0-N) then next line and so forth (j:0-N)
+		for (let j = 0; j < yscale; j++) {
+            for (let i = 0; i < xscale; i++) {
+                boxes.push({
+                    forward: [
+                        { A: j === 0 ? hexToNibble(inputAx[i]) : [0, 0, 0, 0] },
+                        { B: i === 0 ? hexToNibble(inputBy[j]) : [0, 0, 0, 0] },
+                        { O: [0, 0, 0, 0] }
+                    ],
+                    backward: [
+                        { dx: [0, 0, 0, 0] },
+                        { cx: [0, 0, 0, 0] },
+                        { sx: [0, 0, 0, 0] }
+                    ]
+                });
+				
+	
+        console.log(`Box added at (${i}, ${j}):`, boxes[boxes.length - 1]);
+
+            }
+        }
+		
+
+    console.log('Boxes after update:', boxes.length); // Should be 4
+
+        drawCanvas(evaluateBoolObject(boxes));
+    }
+
+    function hexToNibble(hex) {
+        const num = parseInt(hex, 16);
+        return [num & 1, (num >> 1) & 1, (num >> 2) & 1, (num >> 3) & 1];
+    }
+
+function evaluateExpression(expression, direction) {
+
+    if (typeof expression !== 'string') {
+        return expression; // Return the value as is if it's not a string
+    }
+    if (direction ==0) {
+    // Replace placeholders with actual values
+    expression = expression.replace(/A\[(\d+)\]/g, (match, index) => A[index]);
+    expression = expression.replace(/B\[(\d+)\]/g, (match, index) => B[index]);
+    expression = expression.replace(/O\[(\d+)\]/g, (match, index) => O[index]);
+    }else{
+    expression = expression.replace(/dx\[(\d+)\]/g, (match, index) => d[index]);
+    expression = expression.replace(/cx\[(\d+)\]/g, (match, index) => c[index]);
+    expression = expression.replace(/sx\[(\d+)\]/g, (match, index) => s[index]);
+    }
+    // Replace boolean operators with JavaScript equivalents
+    expression = expression.replace(/#/g, '^'); // EXOR
+    expression = expression.replace(/!/g, '!'); // NOT
+    expression = expression.replace(/&&/g, '&&'); // AND
+    expression = expression.replace(/\|\|/g, '||'); // OR 
+    
+   // Evaluate the expression and convert boolean results to integers
+    return eval(expression) ? 1 : 0;
+
+}
+
+function evaluateMasterBoolObject(masterBoolObject, direction) { 
+ if (direction ==0) {
+    // Evaluate backward array
+    masterBoolObject.forward.forEach(item => {
+        Object.keys(item).forEach(key => {
+            item[key] = item[key].map(expr => evaluateExpression(expr, 0)); 
+        });
+    });
+  } else {
+    // Evaluate backward array
+    masterBoolObject.backward.forEach(item => {
+        Object.keys(item).forEach(key => {
+            item[key] = item[key].map(expr => evaluateExpression(expr, 1)); 
+        });
+    });
+  }
+    return masterBoolObject;
+}
+  
+function evaluateBoolObject(boxes) {
+        const userInputString = document.getElementById('userInput').value;
+	    let boolObject = JSON.parse(userInputString);
+        console.log('boolObject before Evaluation:', formatJSON(boolObject)); 
+
+console.log('x' + xscale + 'y' + yscale + '>>>>>>>>>>>>'+ boxes.length);
+    for (let ii = 0; ii < boxes.length; ii++) {
+        let box = boxes[ii];
+
+        if (ii < xscale) {
+            A = box.forward[0].A; // x axis
+       	    console.log( 'box.forward[0].A' +  box.forward[0].A); 
+
+        } else {
+            A = boxes[ii - xscale].forward[0].A; 
+	        console.log( 'boxes[ii - xscale].forward[0].A' + boxes[(ii - xscale)].forward[0].A );
+
+        }
+
+        if (ii % xscale === 0) {
+            B = box.forward[1].B; // y axis
+       	    console.log( 'box.forward[1].B' +  box.forward[1].B); 
+        } else {
+            B = boxes[ii - 1].forward[1].B;
+	        console.log( 'boxes[ii - 1].forward[1].B' + boxes[ii - 1].forward[1].B );
+        }
+
+        if (ii < xscale || ii % xscale === 0) {
+            O = box.forward[2].O; // z axis
+       	    console.log( 'box.forward[2].O' +  box.forward[2].O); 
+        } else {
+            O = boxes[ii - xscale - 1].forward[2].O;
+	        console.log( 'boxes[ii - xscale - 1].forward[2].O' + boxes[ii - xscale - 1].forward[2].O );
+        }
+
+   	    boolObject = evaluateMasterBoolObject(boolObject, 0); 
+		boxes[ii] = boolObject;
+	}
+
+    for (let iz = (boxes.length-1); iz >= 0; iz--) {
+        let box = boxes[iz];
+
+        if (iz >= xscale * (yscale  - 1)) {
+            d = box.backward[0].dx; // x axis
+       	    console.log( 'box.backward[0].dx' +  box.backward[0].dx); 
+
+        } else {
+            d = boxes[iz + xscale].backward[0].dx; 
+	        console.log( 'boxes[iz - xscale].backward[0].dx' + boxes[(iz + xscale)].backward[0].dx );
+
+        }
+
+        if (iz % xscale === xscale - 1) {
+            c = box.backward[1].cx; // y axis
+       	    console.log( 'box.backward[1].cx' +  box.backward[1].cx); 
+        } else {
+            c = boxes[iz + 1].backward[1].cx;
+	        console.log( 'boxes[iz + 1].backward[1].cx' + boxes[iz + 1].backward[1].cx );
+        }
+
+        if ((iz >= xscale * (yscale  - 1))|| (iz % xscale === xscale - 1)) {
+            s = box.backward[2].sx; // z axis
+       	    console.log( 'box.backward[2].sx' +  box.backward[2].sx); 
+        } else {
+            s = boxes[iz + xscale + 1].backward[2].sx;
+	        console.log( 'boxes[iz + xscale + 1].backward[2].sx' + boxes[iz + xscale + 1].backward[2].sx );
+        }
+
+		//const userInputString = document.getElementById('userInput').value;
+        //const boolObject = JSON.parse(userInputString);
+        console.log('boolObject after Evaluation:', formatJSON(boolObject)); 
+   	    boxes[iz] = evaluateMasterBoolObject( boolObject, 1); 
+  }
+
+    return boxes;
+}
+
+
+function drawCanvas(boxes) {
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const boxSize = 800 / Math.max(xscale, yscale);
+    boxes.forEach((box, index) => {
+        const x = (index % xscale) * boxSize;
+        const y = Math.floor(index / xscale) * boxSize;
+
+        let a0, b0, o0, a1, b1, o1, d0, c0, s0, d1, c1, s1;
+        box.forward.forEach(item => {
+            if (item.A) {a0 = item.A[0]; a1 = item.A}
+            if (item.B) {b0 = item.B[0]; b1 = item.B}
+            if (item.O) {o0 = item.O[0]; o1 = item.O}
+        });
+        box.backward.forEach(item => {
+            if (item.dx) {d0 = item.dx[0]; d1 = item.dx}
+            if (item.cx) {c0 = item.cx[0]; c1 = item.cx}
+            if (item.sx) {s0 = item.sx[0]; s1 = item.sx}
+        });
+		
+        console.log(`BOX: ${JSON.stringify(box)}, A: ${a0}, B: ${b0}, O: ${o0}, d: ${d0}, c: ${c0}, s: ${s0}`);
+
+        ctx.strokeRect(x, y, boxSize / 3, boxSize / 3);
+
+        // Put a dot in the boxes with A[0] or B[0] set
+        if (a0 || b0) {
+            ctx.beginPath();
+            ctx.arc(x + boxSize / 6, y + boxSize / 6, 2, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+
+        // Draw lines
+        if (a0 && y + boxSize < 800) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x + boxSize / 6, y + boxSize / 6 + boxSize);
+            ctx.stroke();
+        }
+        if (b0 && x + boxSize < 800) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x + boxSize / 6 + boxSize, y + boxSize / 6);
+            ctx.stroke();
+        }
+        if (o0 && x + boxSize < 800 && y + boxSize < 800) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x + boxSize / 6 + boxSize, y + boxSize / 6 + boxSize);
+            ctx.stroke();
+        }
+
+        // Draw dx, cx, and sx lines
+        if (d0 && y - boxSize >= 0) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x + boxSize / 6, y - boxSize / 6);
+            ctx.stroke();
+        }
+        if (c0 && x - boxSize >= 0) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x - boxSize / 6, y + boxSize / 6);
+            ctx.stroke();
+        }
+        if (s0 && x - boxSize >= 0 && y - boxSize >= 0) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x - boxSize / 6, y - boxSize / 6);
+            ctx.stroke();
+        }
+
+        // Print hex values inside each box
+        ctx.font = '8px Arial';
+        ctx.fillText(`A: ${a1}`, x + 2, y + 10);
+        ctx.fillText(`B: ${b1}`, x + 2, y + 20);
+        ctx.fillText(`O: ${o1}`, x + 2, y + 30);
+        ctx.fillText(`d: ${d1}`, x + 2, y + 50);
+        ctx.fillText(`c: ${c1}`, x + 2, y + 60);
+        ctx.fillText(`s: ${s1}`, x + 2, y + 70);
+    });
+}
+
+
+ function updateBox() {
+            const input = document.getElementById('updateInput').value;
+            const [groupAliasIndex, value] = input.split('=');
+            const [order, group, alias, index] = groupAliasIndex.split('.').map(Number);
+
+            console.log(`Updating box at order: ${order}, group: ${group}, alias: ${alias}, index: ${index} with value: ${value}`);
+
+const aliasNames = group === 0 ? ['A','B','O'] : ['dx','cx','sx'];
+document.getElementById('selectionDisplay0').textContent =
+  `#${order} → ${aliasNames[alias]}[${index}] = ${value}`;
+
+            document.getElementById('selectionDisplay').textContent =`Test Box Entry: Order: ${order}, Group: ${group}, Alias: ${alias}, Index: ${index}, Value: ${value}`;
+
+
+            if (group === 0) {
+                const key = Object.keys(boxes[order].forward[alias])[0];
+                boxes[order].forward[alias][key][index] = Number(value);
+                console.log(`Updated forward: ${JSON.stringify(boxes[order].forward[alias])}`);
+            } else if (group === 1) {
+                const key = Object.keys(boxes[order].backward[alias])[0];
+                boxes[order].backward[alias][key][index] = Number(value);
+                console.log(`Updated backward: ${JSON.stringify(boxes[order].backward[alias])}`);
+            }
+
+            document.getElementById('masterBoolDisplay').textContent = formatJSON(boxes[order]);
+            drawCanvas(evaluateBoolObject(boxes));        }
+  
+	window.onload = displayMasterBoolObject;
+
+
+
+</script><script>
+(function(){
+  var slider=document.getElementById('zoomSlider');
+  var label=document.getElementById('zoomLabel');
+  var stage=document.getElementById('stage');
+  function applyZoom(){
+    var z = slider?parseInt(slider.value,10):100;
+    if(label) label.textContent = z+'%';
+    var scale = z/100;
+    if(stage){ stage.style.transform='scale('+scale+')'; stage.style.transformOrigin='top left'; }
+  }
+  if(slider){ slider.addEventListener('input', applyZoom); applyZoom(); }
+})();
+</script><script>
+(function(){
+  var old = document.getElementById('updateInput');
+  if(!old) return;
+  var inp = old.cloneNode(true);
+  old.parentNode.replaceChild(inp, old);
+
+  // Map alias index to names used in your state; adjust as needed
+  var aliasMap = {0:'A',1:'B',2:'C',3:'O',4:'d',5:'s'};
+
+  function parseUpdate(s){
+    // Accept 'box.order.alias.index=value' or 'alias.index=value' (box/order default 0)
+    s = (s||'').trim();
+    var m = s.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)\s*=\s*([01])$/);
+    if(m){
+      return {box:+m[1], order:+m[2], alias:+m[3], index:+m[4], value:+m[5]};
+    }
+    var m2 = s.match(/^(\d+)\.(\d+)\s*=\s*([01])$/); // alias.index=value
+    if(m2){
+      return {box:0, order:0, alias:+m2[1], index:+m2[2], value:+m2[3]};
+    }
+    return null;
+  }
+
+  function drawOneBox(i){
+    // If you have a specialized draw function, call it here.
+    // Fallback: redraw everything.
+    if(typeof drawBox==='function') { drawBox(i); }
+    else if(typeof drawBoxes==='function') { drawBoxes(); }
+  }
+
+  inp.addEventListener('change', function(e){
+    var u = parseUpdate(e.target.value);
+    if(!u){ console.warn('Bad update', e.target.value); return; }
+    var aliasName = aliasMap[u.alias] || 'A';
+    var targetOrder = (u.order===0?'forward':'backward');
+
+    try {
+      // Expect a global boxes[] structure. Example shape:
+      // boxes[i].A is an array, boxes[i].B, boxes[i].C, boxes[i].O, etc.
+      if(!window.boxes || !boxes[u.box]){ console.warn('No boxes for index', u.box); return; }
+      var b = boxes[u.box];
+      if(!b[aliasName]) b[aliasName] = [0,0,0,0];
+      b[aliasName][u.index] = u.value;
+      // If order matters in your state (forward/backward arrays), apply here.
+      if(Array.isArray(b[targetOrder])){
+        // Optional: mirror into an order-specific buffer
+        // b[targetOrder][aliasName] = b[aliasName].slice();
+      }
+      drawOneBox(u.box);
+    } catch(err){ console.error('Scoped update failed', err); }
+  });
+})();
+</script></body></html>

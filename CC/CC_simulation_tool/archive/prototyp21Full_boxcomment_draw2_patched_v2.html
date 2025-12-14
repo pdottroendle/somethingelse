@@ -1,0 +1,281 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <title>ABCDOS Grid — Ports + SEED-only Green Lines (patched v2)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 20px; }
+    pre { background: #f6f8fa; padding: 12px; border-radius: 8px; overflow:auto; }
+    .note { color:#555; margin-top:8px; }
+    .toolbar { margin: 10px 0; display:flex; gap:12px; align-items:center; }
+    .toolbar input[type=range] { width: 240px; }
+  </style>
+</head>
+<body>
+  <pre>
+# ABCDOS Grid — Ports \+ SEED\-only Green Lines
+## ABCDOS Grid — Ports \+ SEED\-only Green Lines
+```
+0→A, 1→B, 2→O```
+```
+order.group.alias.index=value```
+```
+group 0→forward```
+```
+1→backward```
+```
+dx,cx,sx```
+```
+ax,bx,ox``` 
+Ad\-hoc Input \(single point\) 
+Short form hits forward inputs \(\). Full form also accepted: \(, : inputs / outputs\).
+Display \(current box state\) 
+```
+1```
+```
+NULL``` 
+Canvas 
+Green lines are drawn only when a SEED override exists for that bit and the expression resolves to . If the override contains or starts with a backslash \\ \(edge guard\), the line appears only on EDGE boxes.
+</pre>
+  <div class='note'>Patched v2: anchors at mid-side with a central 1/3 segment; diagonal aliases are corner-anchored; density-based blur merges crowded lines; zoom controller included (wheel + slider). Edge-guard uses backslash (\) only; NULL left as-is.</div>
+
+  <div class='toolbar'>
+    <label>Zoom: <input id='zoomSlider' type='range' min='50' max='400' value='100'></label>
+    <span id='zoomLabel'>100%</span>
+  </div>
+
+  <script>
+  // =========================
+  // Config (backslash-only edge guard; NULL left as-is)
+  // =========================
+  const Config = {
+    EDGE_GUARD_PREFIXES: ['\'], // backslash only per request
+    ALIAS_DELTAS: {
+      forward:  { A: [-1, 0], B: [ 1, 0], O: [ 0, 1], S: [0, -1] },
+      backward: { A: [ 1, 0], B: [-1, 0], O: [ 0,-1], S: [0,  1] },
+      // Diagonal (if used): you can override these if your engine supports diag neighbors
+      diagForward:  { O: [ 1, 1], SX: [-1,-1], OX: [ 1,-1], S: [-1, 1] },
+      diagBackward: { O: [-1,-1], SX: [ 1, 1], OX: [-1, 1], S: [ 1,-1] },
+    },
+    LINE_STYLE: { baseColor: '#32CD32', baseWidth: 2, cap: 'round' },
+    DIAGONAL_ALIASES: ['O','S','SX','OX'],
+    DIAGONAL_CORNERS: {
+      // Corner mapping for diagonal ports; tweak as needed
+      // rect corners: TL=(x,y), TR=(x+w,y), BL=(x,y+h), BR=(x+w,y+h)
+      O:  'BL',   // bottom-left
+      S:  'TR',   // top-right
+      SX: 'TL',   // top-left
+      OX: 'BR'    // bottom-right
+    },
+    SIDE_SEGMENT_RATIO: 1/3, // central region length as fraction of side
+  };
+
+  /** Edge check */
+  function isEdgeBox(x, y, width, height) {
+    return x === 0 || y === 0 || x === (width - 1) || y === (height - 1);
+  }
+
+  /** Parse tokens like "\\A[0]" or "A[0]" (edge-guard optional, backslash only). */
+  function parseAliasToken(token) {
+    if (!token || typeof token !== 'string') return null;
+    let edgeGuarded = false;
+    let raw = token.trim();
+    for (const p of Config.EDGE_GUARD_PREFIXES) {
+      if (raw.startsWith(p)) { edgeGuarded = true; raw = raw.slice(p.length); break; }
+    }
+    const m = raw.match(/^([A-Za-z]+)\[(\d+)\]$/);
+    if (!m) return null;
+    return { alias: m[1].toUpperCase(), idx: parseInt(m[2], 10), edgeGuarded };
+  }
+
+  /** Neighbor XY given order & alias (axis + optional diagonal tables) */
+  function neighborXY(order, alias, idx, x, y, useDiagonal=false) {
+    let table = Config.ALIAS_DELTAS[order];
+    if (useDiagonal && Config.DIAGONAL_ALIASES.includes(alias)) {
+      table = Config.ALIAS_DELTAS[(order === 'forward') ? 'diagForward' : 'diagBackward'];
+    }
+    if (!table || !(alias in table)) return null;
+    const [dx, dy] = table[alias];
+    return { nx: x + dx, ny: y + dy };
+  }
+
+  // -----------------------------
+  // Anchor computation utilities
+  // -----------------------------
+  function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
+
+  /** Central 1/3 segment along a side, returns [start, step] for lane placement */
+  function segmentParams(length, lanes) {
+    const segLen = length * Config.SIDE_SEGMENT_RATIO;
+    const start = (length - segLen) / 2; // centered
+    const count = Math.max(lanes, 1);
+    const step = (segLen / (count + 1)); // leave margins inside the segment
+    return { start, step, segLen };
+  }
+
+  /** Precise anchor: mid-side with central 1/3 segment, diagonal corners for O/S/SX/OX */
+  function anchorPointForAlias(rect, alias, idx) {
+    const lanes = 8; // default lane count if upstream doesn't provide
+    const lane = idx % lanes;
+
+    // Diagonal corner anchors
+    if (Config.DIAGONAL_ALIASES.includes(alias)) {
+      const corner = Config.DIAGONAL_CORNERS[alias] || 'BL';
+      let x = rect.x, y = rect.y;
+      if (corner === 'TR') { x = rect.x + rect.w; y = rect.y; }
+      else if (corner === 'BL') { x = rect.x; y = rect.y + rect.h; }
+      else if (corner === 'BR') { x = rect.x + rect.w; y = rect.y + rect.h; }
+      // Small inward offset so the line emerges clearly from the corner
+      const inward = 4;
+      if (corner === 'TL') { x += inward; y += inward; }
+      if (corner === 'TR') { x -= inward; y += inward; }
+      if (corner === 'BL') { x += inward; y -= inward; }
+      if (corner === 'BR') { x -= inward; y -= inward; }
+      return { x, y };
+    }
+
+    // Axis-aligned mid-side anchors (A left, B right, S top, O bottom center)
+    if (alias === 'A') {
+      const { start, step } = segmentParams(rect.h, lanes);
+      const y = rect.y + start + step * (lane + 1);
+      const x = rect.x + 0; // on the side; slight inward offset for visibility
+      return { x: x + 4, y: clamp(y, rect.y, rect.y + rect.h) };
+    }
+    if (alias === 'B') {
+      const { start, step } = segmentParams(rect.h, lanes);
+      const y = rect.y + start + step * (lane + 1);
+      const x = rect.x + rect.w;
+      return { x: x - 4, y: clamp(y, rect.y, rect.y + rect.h) };
+    }
+    if (alias === 'S') { // top side
+      const { start, step } = segmentParams(rect.w, lanes);
+      const x = rect.x + start + step * (lane + 1);
+      const y = rect.y + 0;
+      return { x: clamp(x, rect.x, rect.x + rect.w), y: y + 4 };
+    }
+    if (alias === 'O') { // bottom side (axis-aligned variant)
+      const { start, step } = segmentParams(rect.w, lanes);
+      const x = rect.x + start + step * (lane + 1);
+      const y = rect.y + rect.h;
+      return { x: clamp(x, rect.x, rect.x + rect.w), y: y - 4 };
+    }
+
+    // Fallback center
+    return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+  }
+
+  /** Dynamic line style based on zoom & local density */
+  function styleForLines(scale, lineCount) {
+    const width = Math.max(1, Config.LINE_STYLE.baseWidth * Math.max(0.75, Math.min(1.5, scale)));
+    // blur grows with density, modestly reduced by zoom-in
+    const blur = Math.min(8, Math.max(0, (lineCount > 12 ? 6 : lineCount > 6 ? 4 : 2) / Math.max(1, scale)));
+    const alpha = 0.9;
+    return { width, blur, alpha };
+  }
+
+  /** Draw green line with blur/alpha */
+  function drawGreenLine(ctx, p1, p2, scale=1, lineCount=1) {
+    const s = styleForLines(scale, lineCount);
+    ctx.save();
+    ctx.strokeStyle = Config.LINE_STYLE.baseColor;
+    ctx.lineWidth   = s.width;
+    ctx.lineCap     = Config.LINE_STYLE.cap;
+    ctx.globalAlpha = s.alpha;
+    ctx.shadowColor = Config.LINE_STYLE.baseColor;
+    ctx.shadowBlur  = s.blur;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Counterpart selection; order-aware hook */
+  function counterpartFor(alias, order) {
+    if (Config.DIAGONAL_ALIASES.includes(alias)) return alias; // corner to corner
+    return (alias === 'A') ? 'B' : (alias === 'B') ? 'A' : alias;
+  }
+
+  /** Render inter-box wires for neighbor-referencing SEED tokens */
+  function renderSeedWiresBetweenBoxes(ctx, gridSize, boxRect, order, x, y, seedOverrideTokens, getBitValue, rectForBox, scale=1, localLineCount=1) {
+    const isEdge = isEdgeBox(x, y, gridSize.cols, gridSize.rows);
+    for (const t of (seedOverrideTokens || [])) {
+      const parsed = parseAliasToken(t);
+      if (!parsed) continue;
+      if (parsed.edgeGuarded && !isEdge) continue;
+
+      const useDiagonal = Config.DIAGONAL_ALIASES.includes(parsed.alias);
+      const nbr = neighborXY(order, parsed.alias, parsed.idx, x, y, useDiagonal);
+      if (!nbr) continue;
+      if (nbr.nx < 0 || nbr.ny < 0 || nbr.nx >= gridSize.cols || nbr.ny >= gridSize.rows) continue;
+
+      const raw = getBitValue(parsed.alias, parsed.idx, x, y);
+      if (raw === null || raw === undefined) continue;
+      if (typeof raw === 'string' && raw.toUpperCase() === 'NULL') continue;
+      if (!raw) continue;
+
+      const p1 = anchorPointForAlias(boxRect, parsed.alias, parsed.idx);
+      const nbrRect = rectForBox(nbr.nx, nbr.ny);
+      if (!nbrRect) continue;
+      const counterpart = counterpartFor(parsed.alias, order);
+      const p2 = anchorPointForAlias(nbrRect, counterpart, parsed.idx);
+      drawGreenLine(ctx, p1, p2, scale, localLineCount);
+    }
+  }
+
+  // -----------------------------
+  // Zoom Controller (wheel + slider)
+  // -----------------------------
+  const Zoom = (function(){
+    let scale = 1.0;
+    let panX = 0, panY = 0;
+    function attachToCanvas(canvas) {
+      // Wheel to zoom around pointer
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY;
+        const factor = delta > 0 ? 0.9 : 1.1;
+        const rect = canvas.getBoundingClientRect();
+        const cx = e.clientX - rect.left;
+        const cy = e.clientY - rect.top;
+        // zoom about cursor
+        panX = cx - factor * (cx - panX);
+        panY = cy - factor * (cy - panY);
+        scale = clamp(scale * factor, 0.5, 4.0);
+        const slider = document.getElementById('zoomSlider');
+        const label = document.getElementById('zoomLabel');
+        if (slider) slider.value = String(Math.round(scale*100));
+        if (label) label.textContent = String(Math.round(scale*100)) + '%';
+        // your draw() should be called after changing zoom
+        if (window.onZoomChanged) window.onZoomChanged(scale, panX, panY);
+      }, { passive:false });
+
+      const slider = document.getElementById('zoomSlider');
+      const label = document.getElementById('zoomLabel');
+      if (slider) {
+        slider.addEventListener('input', () => {
+          scale = clamp(parseInt(slider.value, 10) / 100, 0.5, 4.0);
+          if (label) label.textContent = slider.value + '%';
+          if (window.onZoomChanged) window.onZoomChanged(scale, panX, panY);
+        });
+      }
+    }
+    function apply(ctx) { ctx.setTransform(scale, 0, 0, scale, panX, panY); }
+    function getScale() { return scale; }
+    return { attachToCanvas, apply, getScale };
+  })();
+
+  // Export
+  window.ABCDOSNeighbor = {
+    neighborXY,
+    parseAliasToken,
+    renderSeedWiresBetweenBoxes,
+    isEdgeBox,
+    anchorPointForAlias,
+    drawGreenLine,
+    Config,
+    Zoom
+  };
+  </script>
+</body>
+</html>
