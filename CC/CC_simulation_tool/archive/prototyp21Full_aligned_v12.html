@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Dynamic Input Processing and Evaluation System</title>
+<style>
+        .container { display: flex; }
+        .box {width: 33%;padding: 10px;}
+		#topRightImage {margin-left:10px;z-index: 1000;width: 450px;height: auto;}
+		#bodytext {margin-left:250px;margin-top:-160px;}
+		#bodytext2 {margin-left:420px;margin-top:-330px;}
+		#userInput {font-size:8px;font:Arial};
+    
+
+/* v12 spacing & layout */
+body{ margin:20px; }
+.toolbar{ margin:10px 0 16px 0; display:flex; gap:16px; align-items:center; position:relative; z-index:100; }
+h1{ margin:12px 0; }
+#stage{ position:relative; width:800px; height:800px; margin-top:20px; background-image:url("Scale.jpg"); background-repeat:no-repeat; background-position:top left; background-size:auto; }
+#stage>canvas{ position:relative; z-index:10; }
+#updateInput{ margin-top:8px; }
+#displayPane{ position:relative; margin-left:24px; }
+</style>
+</head><body><div class="toolbar"><label>Zoom: <input id="zoomSlider" max="300" min="25" type="range" value="100"/></label><span id="zoomLabel">100%</span><button id="initBtn">Init boxes</button></div>
+	Apr 14 3:51 PM PST - WA, USA   
+	<label for="inputA"></label>
+<input id="inputA" placeholder="Enter hex string A" type="text"/>
+<label for="inputB"></label>
+<input id="inputB" placeholder="Enter hex string B" type="text"/>
+<h1> Dynamic Input Processing and Evaluation System</h1>
+<br/><br/>
+<div id="bodytext">
+<label for="userInput"></label>
+<textarea cols="35" id="userInput" oninput="updateMasterBool()" rows="17"></textarea>
+<br/><br/>
+<input id="updateInput" placeholder="0.0.1=3" type="text"/>
+<div id="selectionDisplay0" style="margin-top:8px;"></div>
+<div id="selectionDisplay" style="margin-top:8px;"></div>
+<pre id="jsonOutput"></pre>
+<br/><br/></div><div id="bodytext2">
+<span id="masterBoolDisplayLabel">Display:</span>
+<pre aria-labelledby="masterBoolDisplayLabel" id="masterBoolDisplay"></pre>
+<br/><br/></div>
+    
+<script> 
+// WARNING: Equations with loops are prohibited, as the simulation 
+// only does 2 runs top left to bottom right for ABO and then the opposite dxcxsx
+// the code needs to leave the booleans unresolved if a return data is expected
+// example box0,0 A[0] = B[0] && sx [0]<< this is only available ont he return run
+// WARNING: edge boxes need have NULL NEEDS TO BE INTEGRATED - TBD //
+ 		/* Systolic Arrays - Application for anyone Booleans to be experimented
+		// this tool is free for the public - anyones booleans is theirs
+		// For science and humanity
+		// Peter-Paul Troendle
+		// Made in 
+		//
+                //		USA, WA 2025 
+		//      Digital Xlyns Inc. 
+		//      All Rights Reserved
+		//
+		//Files: Prototyp.html README.txt fubctional.js graphical.js
+		//==================================================
+		// ABCOS 8x8 (or any scale)
+		//              O _______ A_______
+		//               |E|E|E|E|E|E|E|E|\  
+		//               |E|E|E|E|E|E|E|E|\  
+		//               |E|E|E|E|E|E|E|E|\  
+		//            B  |E|E|E|E|E|E|E|E|\  C
+		//               |E|E|E|E|E|E|E|E|\  
+		//               |E|E|E|E|E|E|E|E|\  
+		//               |E|E|E|E|E|E|E|E|\  
+		//               |E|E|E|E|E|E|E|E|\  
+		//                ---------------- S
+		//                  \ \ \ \ \ \ \ \
+		//                    \ \ \ \ \ \ \ 
+		//                      \ \ \ \ \ \
+		//                        \ \ \ \ \ C extended
+		//               (using S)  \ \ \ \ 
+		//                            \ \ \
+		//                              \ \
+		//                                \
+		// D output extends C : output[0] = C in full 
+		//
+		// ABCDOS
+		// E 3 directional (atomic element) 
+		// 2x3x4 inputs : bi-directional x 4 channels x 3 directions 
+		//      O -------A--------
+		//      |ox     ax      |      Forwards:      Backwards:
+		//      |  \    |       |      -----x-axis      
+		//      |               |      |\                     |
+		//     B|bx--       --cx|C     | \                 \  |
+		//      |               |      |  \                 \ |    
+		//      |        |    \ |      |   \ z-axis          \|
+		//      |       dx    sx|      y-axis           ------
+		//      ----------------
+		//             D         S (ox)
+		// x is return path
+		// a[0] is the memory bit (that scales)
+		// b[0] is the code bit (that scales) 
+		// each code bits runs in parallel to the other codes
+		// each memory bit is in parallel to all the others 
+		// all code access to all memory in one single cycle
+		
+		//===================================================
+		// BOOLEANS used to creatre outputs 
+		// eval(equationZ.replace(/x/g, x).replace(/y/g, y).replace(/z/g, z)));
+		//===================================================
+		// BOX DATA and CODE structure
+		// 1 I need in Javascript a input field providing an update value for a json object
+        // 2 the updated json object should be displayed on the output fiield of the html page
+        // 3 this is the json object initially {{{,,,}{,,,}{,,,}}{{,,,}{,,,}{,,,}}}
+        // 4 map the json object to their alias values and initialise with 0 all elements:
+             {{{A[0]:0,A[1]:0,A[2]:0,A[3]:0}{B[0]:0,B[1]:0,B[2]:0,B[3]:0}{O[0]:0,O[1]:0,O[2]:0,O[3]:0}}{{dx[0]:0,dx[1]:0,dx[2]:0,dx[3]:0}{cx[0]:0,cx[1]:0,cx[2]:0,cx[3]:0}{sx[0]:0,sx[1]:0,sx[2]:0,sx[3]:0}}} 
+        // 5 as example 1.1.2 =1 would yield {{,{,1}}} as example so B[1] would have the value 1, please check this as it will show you understood
+		//===================================================
+        */
+//document.addEventListener('DOMContentLoaded', () => {});
+    function formatJSON(json) {
+        return JSON.stringify(json, null, 2)
+            .replace(/\[\s+/g, '[')
+            .replace(/\s+\]/g, ']')
+            .replace(/\s*,\s*/g, ',')
+            .replace(/,\n\s+/g, ',\n')
+            .replace(/],/g, '],\n');
+    }
+
+let boxes = [];
+
+let A, B, O;
+let d = [0, 0, 0, 0];
+let c = [0, 0, 0, 0];
+let s = [0, 0, 0, 0];
+
+let inputAx = '';
+let inputBy = '';
+let xscale = 0;
+let yscale = 0;
+
+document.getElementById('inputA').addEventListener('input', updateBoxes);
+document.getElementById('inputB').addEventListener('input', updateBoxes);
+document.getElementById('userInput').addEventListener('input', updateMasterBool);
+document.getElementById('updateInput').addEventListener('input', updateBox);
+
+    let masterBoolObject = '{"forward":[{"A":["A[0]",0,0,0]},{"B":["B[0]",0,0,"A[1] # B[1]"]},{"O":["A[0] && B[1]",0,"A[2] && !O[0]",0]}],"backward":[{"dx":[0,0,0,0]},{"cx":[0,0,0,0]},{"sx":[0,0,0,0]}]}'
+
+    function updateMasterBool() {
+        const jsonInput = document.getElementById('userInput').value;
+            masterBoolObject = jsonInput; 
+            console.log('MasterboolObject updated:', masterBoolObject);
+            displayMasterBoolObject();
+    }
+	
+    function displayMasterBoolObject() {
+        const masterBoolDisplay = document.getElementById('masterBoolDisplay');
+        masterBoolDisplay.textContent = formatJSON(JSON.parse(masterBoolObject));
+        document.getElementById('userInput').value = masterBoolObject;
+		updateBoxes()
+    }
+	
+// Convert the object to a JSON string
+const masterBoolObjectString = JSON.stringify(masterBoolObject);
+	
+    function updateBoxes() {
+ 
+    console.log('Boxes before update:', boxes.length); // Should be 0
+
+     inputAx = document.getElementById('inputA').value;
+     inputBy = document.getElementById('inputB').value;
+
+    // Update xscale and yscale based on the current values of inputAx and inputBy
+     xscale = inputAx.length;
+     yscale = inputBy.length;
+
+       boxes = []; 
+
+		// line 0 element i=0...N from inputA populates, the.. untill j=N line
+        // left right (i:0-N) then next line and so forth (j:0-N)
+		for (let j = 0; j < yscale; j++) {
+            for (let i = 0; i < xscale; i++) {
+                boxes.push({
+                    forward: [
+                        { A: j === 0 ? hexToNibble(inputAx[i]) : [0, 0, 0, 0] },
+                        { B: i === 0 ? hexToNibble(inputBy[j]) : [0, 0, 0, 0] },
+                        { O: [0, 0, 0, 0] }
+                    ],
+                    backward: [
+                        { dx: [0, 0, 0, 0] },
+                        { cx: [0, 0, 0, 0] },
+                        { sx: [0, 0, 0, 0] }
+                    ]
+                });
+				
+	
+        console.log(`Box added at (${i}, ${j}):`, boxes[boxes.length - 1]);
+
+            }
+        }
+		
+
+    console.log('Boxes after update:', boxes.length); // Should be 4
+
+        drawCanvas(evaluateBoolObject(boxes));
+    }
+
+    function hexToNibble(hex) {
+        const num = parseInt(hex, 16);
+        return [num & 1, (num >> 1) & 1, (num >> 2) & 1, (num >> 3) & 1];
+    }
+
+function evaluateExpression(expression, direction) {
+
+    if (typeof expression !== 'string') {
+        return expression; // Return the value as is if it's not a string
+    }
+    if (direction ==0) {
+    // Replace placeholders with actual values
+    expression = expression.replace(/A\[(\d+)\]/g, (match, index) => A[index]);
+    expression = expression.replace(/B\[(\d+)\]/g, (match, index) => B[index]);
+    expression = expression.replace(/O\[(\d+)\]/g, (match, index) => O[index]);
+    }else{
+    expression = expression.replace(/dx\[(\d+)\]/g, (match, index) => d[index]);
+    expression = expression.replace(/cx\[(\d+)\]/g, (match, index) => c[index]);
+    expression = expression.replace(/sx\[(\d+)\]/g, (match, index) => s[index]);
+    }
+    // Replace boolean operators with JavaScript equivalents
+    expression = expression.replace(/#/g, '^'); // EXOR
+    expression = expression.replace(/!/g, '!'); // NOT
+    expression = expression.replace(/&&/g, '&&'); // AND
+    expression = expression.replace(/\|\|/g, '||'); // OR 
+    
+   // Evaluate the expression and convert boolean results to integers
+    return eval(expression) ? 1 : 0;
+
+}
+
+function evaluateMasterBoolObject(masterBoolObject, direction) { 
+ if (direction ==0) {
+    // Evaluate backward array
+    masterBoolObject.forward.forEach(item => {
+        Object.keys(item).forEach(key => {
+            item[key] = item[key].map(expr => evaluateExpression(expr, 0)); 
+        });
+    });
+  } else {
+    // Evaluate backward array
+    masterBoolObject.backward.forEach(item => {
+        Object.keys(item).forEach(key => {
+            item[key] = item[key].map(expr => evaluateExpression(expr, 1)); 
+        });
+    });
+  }
+    return masterBoolObject;
+}
+  
+function evaluateBoolObject(boxes) {
+        const userInputString = document.getElementById('userInput').value;
+	    let boolObject = JSON.parse(userInputString);
+        console.log('boolObject before Evaluation:', formatJSON(boolObject)); 
+
+console.log('x' + xscale + 'y' + yscale + '>>>>>>>>>>>>'+ boxes.length);
+    for (let ii = 0; ii < boxes.length; ii++) {
+        let box = boxes[ii];
+
+        if (ii < xscale) {
+            A = box.forward[0].A; // x axis
+       	    console.log( 'box.forward[0].A' +  box.forward[0].A); 
+
+        } else {
+            A = boxes[ii - xscale].forward[0].A; 
+	        console.log( 'boxes[ii - xscale].forward[0].A' + boxes[(ii - xscale)].forward[0].A );
+
+        }
+
+        if (ii % xscale === 0) {
+            B = box.forward[1].B; // y axis
+       	    console.log( 'box.forward[1].B' +  box.forward[1].B); 
+        } else {
+            B = boxes[ii - 1].forward[1].B;
+	        console.log( 'boxes[ii - 1].forward[1].B' + boxes[ii - 1].forward[1].B );
+        }
+
+        if (ii < xscale || ii % xscale === 0) {
+            O = box.forward[2].O; // z axis
+       	    console.log( 'box.forward[2].O' +  box.forward[2].O); 
+        } else {
+            O = boxes[ii - xscale - 1].forward[2].O;
+	        console.log( 'boxes[ii - xscale - 1].forward[2].O' + boxes[ii - xscale - 1].forward[2].O );
+        }
+
+   	    boolObject = evaluateMasterBoolObject(boolObject, 0); 
+		boxes[ii] = boolObject;
+	}
+
+    for (let iz = (boxes.length-1); iz >= 0; iz--) {
+        let box = boxes[iz];
+
+        if (iz >= xscale * (yscale  - 1)) {
+            d = box.backward[0].dx; // x axis
+       	    console.log( 'box.backward[0].dx' +  box.backward[0].dx); 
+
+        } else {
+            d = boxes[iz + xscale].backward[0].dx; 
+	        console.log( 'boxes[iz - xscale].backward[0].dx' + boxes[(iz + xscale)].backward[0].dx );
+
+        }
+
+        if (iz % xscale === xscale - 1) {
+            c = box.backward[1].cx; // y axis
+       	    console.log( 'box.backward[1].cx' +  box.backward[1].cx); 
+        } else {
+            c = boxes[iz + 1].backward[1].cx;
+	        console.log( 'boxes[iz + 1].backward[1].cx' + boxes[iz + 1].backward[1].cx );
+        }
+
+        if ((iz >= xscale * (yscale  - 1))|| (iz % xscale === xscale - 1)) {
+            s = box.backward[2].sx; // z axis
+       	    console.log( 'box.backward[2].sx' +  box.backward[2].sx); 
+        } else {
+            s = boxes[iz + xscale + 1].backward[2].sx;
+	        console.log( 'boxes[iz + xscale + 1].backward[2].sx' + boxes[iz + xscale + 1].backward[2].sx );
+        }
+
+		//const userInputString = document.getElementById('userInput').value;
+        //const boolObject = JSON.parse(userInputString);
+        console.log('boolObject after Evaluation:', formatJSON(boolObject)); 
+   	    boxes[iz] = evaluateMasterBoolObject( boolObject, 1); 
+  }
+
+    return boxes;
+}
+
+
+function drawCanvas(boxes) {
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const boxSize = 800 / Math.max(xscale, yscale);
+    boxes.forEach((box, index) => {
+        const x = (index % xscale) * boxSize;
+        const y = Math.floor(index / xscale) * boxSize;
+
+        let a0, b0, o0, a1, b1, o1, d0, c0, s0, d1, c1, s1;
+        box.forward.forEach(item => {
+            if (item.A) {a0 = item.A[0]; a1 = item.A}
+            if (item.B) {b0 = item.B[0]; b1 = item.B}
+            if (item.O) {o0 = item.O[0]; o1 = item.O}
+        });
+        box.backward.forEach(item => {
+            if (item.dx) {d0 = item.dx[0]; d1 = item.dx}
+            if (item.cx) {c0 = item.cx[0]; c1 = item.cx}
+            if (item.sx) {s0 = item.sx[0]; s1 = item.sx}
+        });
+		
+        console.log(`BOX: ${JSON.stringify(box)}, A: ${a0}, B: ${b0}, O: ${o0}, d: ${d0}, c: ${c0}, s: ${s0}`);
+
+        ctx.strokeRect(x, y, boxSize / 3, boxSize / 3);
+
+        // Put a dot in the boxes with A[0] or B[0] set
+        if (a0 || b0) {
+            ctx.beginPath();
+            ctx.arc(x + boxSize / 6, y + boxSize / 6, 2, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+
+        // Draw lines
+        if (a0 && y + boxSize < 800) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x + boxSize / 6, y + boxSize / 6 + boxSize);
+            ctx.stroke();
+        }
+        if (b0 && x + boxSize < 800) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x + boxSize / 6 + boxSize, y + boxSize / 6);
+            ctx.stroke();
+        }
+        if (o0 && x + boxSize < 800 && y + boxSize < 800) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x + boxSize / 6 + boxSize, y + boxSize / 6 + boxSize);
+            ctx.stroke();
+        }
+
+        // Draw dx, cx, and sx lines
+        if (d0 && y - boxSize >= 0) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x + boxSize / 6, y - boxSize / 6);
+            ctx.stroke();
+        }
+        if (c0 && x - boxSize >= 0) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x - boxSize / 6, y + boxSize / 6);
+            ctx.stroke();
+        }
+        if (s0 && x - boxSize >= 0 && y - boxSize >= 0) {
+            ctx.beginPath();
+            ctx.moveTo(x + boxSize / 6, y + boxSize / 6);
+            ctx.lineTo(x - boxSize / 6, y - boxSize / 6);
+            ctx.stroke();
+        }
+
+        // Print hex values inside each box
+        ctx.font = '8px Arial';
+        ctx.fillText(`A: ${a1}`, x + 2, y + 10);
+        ctx.fillText(`B: ${b1}`, x + 2, y + 20);
+        ctx.fillText(`O: ${o1}`, x + 2, y + 30);
+        ctx.fillText(`d: ${d1}`, x + 2, y + 50);
+        ctx.fillText(`c: ${c1}`, x + 2, y + 60);
+        ctx.fillText(`s: ${s1}`, x + 2, y + 70);
+    });
+}
+
+
+ function updateBox() {
+            const input = document.getElementById('updateInput').value;
+            const [groupAliasIndex, value] = input.split('=');
+            const [order, group, alias, index] = groupAliasIndex.split('.').map(Number);
+
+            console.log(`Updating box at order: ${order}, group: ${group}, alias: ${alias}, index: ${index} with value: ${value}`);
+
+const aliasNames = group === 0 ? ['A','B','O'] : ['dx','cx','sx'];
+document.getElementById('selectionDisplay0').textContent =
+  `#${order} → ${aliasNames[alias]}[${index}] = ${value}`;
+
+            document.getElementById('selectionDisplay').textContent =`Test Box Entry: Order: ${order}, Group: ${group}, Alias: ${alias}, Index: ${index}, Value: ${value}`;
+
+
+            if (group === 0) {
+                const key = Object.keys(boxes[order].forward[alias])[0];
+                boxes[order].forward[alias][key][index] = Number(value);
+                console.log(`Updated forward: ${JSON.stringify(boxes[order].forward[alias])}`);
+            } else if (group === 1) {
+                const key = Object.keys(boxes[order].backward[alias])[0];
+                boxes[order].backward[alias][key][index] = Number(value);
+                console.log(`Updated backward: ${JSON.stringify(boxes[order].backward[alias])}`);
+            }
+
+            document.getElementById('masterBoolDisplay').textContent = formatJSON(boxes[order]);
+            drawCanvas(evaluateBoolObject(boxes));        }
+  
+	window.onload = displayMasterBoolObject;
+
+
+
+</script>
+<div id="stage"><canvas height="800" id="canvas" width="800"></canvas></div><script>(function(){
+  var s=document.getElementById('zoomSlider'), l=document.getElementById('zoomLabel'), g=document.getElementById('stage');
+  function z(){ var v=s?parseInt(s.value,10):100; if(l) l.textContent=v+'%'; var k=v/100; if(g){ g.style.transform='scale('+k+')'; g.style.transformOrigin='top left'; } }
+  if(s){ s.addEventListener('input', z); s.addEventListener('change', z); } z();
+})();</script><script>(function(){
+  function initBoxes(){
+    try{
+      var a=document.getElementById('inputA'), b=document.getElementById('inputB');
+      if(a && !a.value) a.value='11111';
+      if(b && !b.value) b.value='11111';
+      if(typeof updateBoxes==='function') updateBoxes();
+    }catch(e){ console.warn('initBoxes failed', e); }
+  }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', function(){ initBoxes(); setTimeout(initBoxes,50); }); }
+  else { initBoxes(); setTimeout(initBoxes,50); }
+  var a=document.getElementById('inputA'), b=document.getElementById('inputB');
+  ['input','change'].forEach(function(ev){ if(a) a.addEventListener(ev, initBoxes); if(b) b.addEventListener(ev, initBoxes); });
+  var btn=document.getElementById('initBtn'); if(btn) btn.addEventListener('click', function(){ initBoxes(); setTimeout(initBoxes,50); });
+})();</script><script>(function(){
+  var inp=document.getElementById('updateInput'); if(!inp){ console.warn('updateInput not found'); return; }
+  var c=inp.cloneNode(true); inp.parentNode.replaceChild(c, inp); inp=c;
+  var F=['A','B','O'], BK=['dx','cx','sx'];
+  function ensureBoxesReady(){
+    if(!window.boxes || !Array.isArray(boxes) || !boxes.length){
+      try{ if(typeof updateBoxes==='function') updateBoxes(); }catch(e){}
+      if(!window.boxes || !boxes.length){
+        // fallback builder (matches DEBUG structure)
+        try{
+          var A=document.getElementById('inputA')?.value || '11111';
+          var B=document.getElementById('inputB')?.value || '11111';
+          var x=A.length, y=B.length;
+          function hexToNibble(h){ var n=parseInt(h,16)||0; return [n&1,(n>>1)&1,(n>>2)&1,(n>>3)&1]; }
+          window.boxes=[];
+          for(var j=0;j<y;j++){
+            for(var i=0;i<x;i++){
+              boxes.push({
+                forward:[ {A:(j===0?hexToNibble(A[i]):[0,0,0,0])}, {B:(i===0?hexToNibble(B[j]):[0,0,0,0])}, {O:[0,0,0,0]} ],
+                backward:[ {dx:[0,0,0,0]}, {cx:[0,0,0,0]}, {sx:[0,0,0,0]} ]
+              });
+            }
+          }
+        }catch(e){ console.warn('fallback builder failed', e); }
+      }
+    }
+  }
+  function parse(s){ s=(s||'').trim(); var m=s.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)\s*=\s*([01])$/); return m?{order:+m[1],group:+m[2],alias:+m[3],index:+m[4],value:+m[5]}:null; }
+  function applyAndRipple(u){
+    ensureBoxesReady();
+    var count=(window.boxes&&Array.isArray(boxes))?boxes.length:0;
+    if(!count || u.order<0 || u.order>=count){ var sd=document.getElementById('selectionDisplay'); if(sd) sd.textContent='Box '+u.order+' out of range. Boxes='+count; return; }
+    var bx=boxes[u.order]; var names=(u.group===0?F:BK); var key=names[u.alias]||names[0];
+    var obj=(u.group===0?bx.forward[u.alias]:bx.backward[u.alias]); var inner=Object.keys(obj)[0];
+    obj[inner][u.index]=u.value|0; // local edit
+    var sd0=document.getElementById('selectionDisplay0'); if(sd0) sd0.textContent='#'+u.order+' → '+key+'['+u.index+'] = '+u.value;
+    try{ if(typeof evaluateBoolObject==='function') boxes=evaluateBoolObject(boxes); }catch(e){ console.error('evaluateBoolObject failed', e); }
+    if(typeof drawCanvas==='function') drawCanvas(boxes);
+  }
+  function handler(){ var u=parse(inp.value); if(u) applyAndRipple(u); }
+  inp.addEventListener('input', handler);
+  inp.addEventListener('change', handler);
+  inp.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); inp.dispatchEvent(new Event('change')); } });
+  window.updateBox=function(){ var u=parse(inp.value); if(u) applyAndRipple(u); };
+})();</script></body>
+</html>

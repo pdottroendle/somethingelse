@@ -116,6 +116,10 @@ SEED evaluates to 1 (via evaluator hook)
 If the expression uses N, wire is shown only on EDGE boxes.
 Pass‑through (A→D, B→C, O→S, dx→ax, cx→bx, sx→ox) does not draw any wire.
 
+Added for simplicity, any Boolean that passes through what it receives does not need to be explicitely mentionned
+"D": [ ,0 ,1 , 1 ]  means that it takes by default A[0] instead of the empty space "D": [A[0] ,0 ,1 , 1 ]  
+ "C": [,,,,] or  "C": [] or omitting C means the default s PASS THROUGH "C": B0,B1,B2,B3]
+
 Spec‑11 — Port Anchor Lookup
 
 Find the correct point for a given alias & lane in the current order (forward/backward) to draw wires between boxes.
